@@ -1,0 +1,743 @@
+================================================================================
+DOCUMENTACIÓN DE CÓDIGO: ine_extractor.py
+================================================================================
+Fecha de generación: 25/10/2025 20:13:49
+Número de líneas: 730
+
+CONTENIDO DEL ARCHIVO:
+----------------------------------------
+
+   1: """
+   2: INE Data Extractor Module
+   3: 
+   4: This module provides functionality to extract inflation data from the Spanish
+   5: National Statistics Institute (INE) API. It handles different types of IPC data
+   6: including general index, sectoral groups, and harmonized European index (IPCA).
+   7: """
+   8: 
+   9: import requests
+  10: import pandas as pd
+  11: import time
+  12: import logging
+  13: from typing import Dict, Optional, List
+  14: from datetime import datetime
+  15: import yaml
+  16: import json
+  17: 
+  18: 
+  19: class INEExtractor:
+  20:     """
+  21:     Extractor class for downloading inflation data from INE API.
+  22:     
+  23:     Handles HTTP connections with retry logic and exponential backoff
+  24:     for robust data extraction from different IPC data sources.
+  25:     """
+  26:     
+  27:     def __init__(self, config_path: str = "config/config.yaml"):
+  28:         """
+  29:         Initialize INE Extractor with configuration.
+  30:         
+  31:         Args:
+  32:             config_path: Path to configuration YAML file
+  33:         """
+  34:         self.logger = logging.getLogger(__name__)
+  35:         self.config = self._load_config(config_path)
+  36:         self.session = self._create_session()
+  37:         
+  38:         # Extract configuration values
+  39:         self.base_url = self.config['data']['ine_base_url']
+  40:         self.urls = self.config['data']['urls']
+  41:         self.max_attempts = self.config['data']['retry']['max_attempts']
+  42:         self.backoff_factor = self.config['data']['retry']['backoff_factor']
+  43:         self.timeout = self.config['data']['retry']['timeout']
+  44:         
+  45:     def _load_config(self, config_path: str) -> Dict:
+  46:         """Load configuration from YAML file."""
+  47:         try:
+  48:             with open(config_path, 'r', encoding='utf-8') as file:
+  49:                 return yaml.safe_load(file)
+  50:         except FileNotFoundError:
+  51:             self.logger.error(f"Configuration file not found: {config_path}")
+  52:             raise
+  53:         except yaml.YAMLError as e:
+  54:             self.logger.error(f"Error parsing configuration file: {e}")
+  55:             raise
+  56:             
+  57:     def _create_session(self) -> requests.Session:
+  58:         """
+  59:         Create HTTP session with appropriate headers for INE API.
+  60:         
+  61:         Returns:
+  62:             Configured requests session
+  63:         """
+  64:         session = requests.Session()
+  65:         session.headers.update({
+  66:             'User-Agent': 'Spanish-Inflation-Predictor/1.0',
+  67:             'Accept': 'application/json',
+  68:             'Content-Type': 'application/json'
+  69:         })
+  70:         return session
+  71:         
+  72:     def _make_request_with_retry(self, url: str, params: Optional[Dict] = None) -> requests.Response:
+  73:         """
+  74:         Make HTTP request with exponential backoff retry logic.
+  75:         
+  76:         Args:
+  77:             url: Target URL for the request
+  78:             params: Optional query parameters
+  79:             
+  80:         Returns:
+  81:             HTTP response object
+  82:             
+  83:         Raises:
+  84:             requests.RequestException: If all retry attempts fail
+  85:         """
+  86:         last_exception = None
+  87:         
+  88:         for attempt in range(self.max_attempts):
+  89:             try:
+  90:                 self.logger.info(f"Attempting request to {url} (attempt {attempt + 1}/{self.max_attempts})")
+  91:                 
+  92:                 response = self.session.get(
+  93:                     url, 
+  94:                     params=params, 
+  95:                     timeout=self.timeout
+  96:                 )
+  97:                 response.raise_for_status()
+  98:                 
+  99:                 self.logger.info(f"Request successful on attempt {attempt + 1}")
+ 100:                 return response
+ 101:                 
+ 102:             except requests.exceptions.RequestException as e:
+ 103:                 last_exception = e
+ 104:                 self.logger.warning(f"Request failed on attempt {attempt + 1}: {e}")
+ 105:                 
+ 106:                 if attempt < self.max_attempts - 1:
+ 107:                     wait_time = self.backoff_factor ** attempt
+ 108:                     self.logger.info(f"Waiting {wait_time} seconds before retry...")
+ 109:                     time.sleep(wait_time)
+ 110:                     
+ 111:         # If we get here, all attempts failed
+ 112:         self.logger.error(f"All {self.max_attempts} attempts failed for URL: {url}")
+ 113:         raise last_exception
+ 114:         
+ 115:     def _parse_ine_response(self, response: requests.Response) -> pd.DataFrame:
+ 116:         """
+ 117:         Parse INE API response and convert to pandas DataFrame.
+ 118:         
+ 119:         Args:
+ 120:             response: HTTP response from INE API
+ 121:             
+ 122:         Returns:
+ 123:             Parsed data as pandas DataFrame
+ 124:         """
+ 125:         try:
+ 126:             # INE API returns JSON data
+ 127:             data = response.json()
+ 128:             
+ 129:             # Extract the actual data from INE response structure
+ 130:             # INE typically returns data in a nested structure
+ 131:             if isinstance(data, list) and len(data) > 0:
+ 132:                 # Handle list response format
+ 133:                 df = pd.DataFrame(data)
+ 134:             elif isinstance(data, dict):
+ 135:                 # Handle dictionary response format
+ 136:                 if 'Data' in data:
+ 137:                     df = pd.DataFrame(data['Data'])
+ 138:                 elif 'data' in data:
+ 139:                     df = pd.DataFrame(data['data'])
+ 140:                 else:
+ 141:                     # Try to extract any list-like structure
+ 142:                     for key, value in data.items():
+ 143:                         if isinstance(value, list) and len(value) > 0:
+ 144:                             df = pd.DataFrame(value)
+ 145:                             break
+ 146:                     else:
+ 147:                         raise ValueError("Could not find data array in response")
+ 148:             else:
+ 149:                 raise ValueError("Unexpected response format from INE API")
+ 150:                 
+ 151:             self.logger.info(f"Successfully parsed {len(df)} records from INE response")
+ 152:             return df
+ 153:             
+ 154:         except (json.JSONDecodeError, KeyError, ValueError) as e:
+ 155:             self.logger.error(f"Error parsing INE response: {e}")
+ 156:             self.logger.debug(f"Response content: {response.text[:500]}...")
+ 157:             raise
+ 158:             
+ 159:     def get_ipc_general_connection(self) -> bool:
+ 160:         """
+ 161:         Test connection to IPC General data endpoint.
+ 162:         
+ 163:         Returns:
+ 164:             True if connection successful, False otherwise
+ 165:         """
+ 166:         try:
+ 167:             url = self.urls['ipc_general']
+ 168:             response = self._make_request_with_retry(url)
+ 169:             self.logger.info("IPC General connection test successful")
+ 170:             return True
+ 171:         except Exception as e:
+ 172:             self.logger.error(f"IPC General connection test failed: {e}")
+ 173:             return False
+ 174:             
+ 175:     def get_ipc_groups_connection(self) -> bool:
+ 176:         """
+ 177:         Test connection to IPC Groups data endpoint.
+ 178:         
+ 179:         Returns:
+ 180:             True if connection successful, False otherwise
+ 181:         """
+ 182:         try:
+ 183:             url = self.urls['ipc_groups']
+ 184:             response = self._make_request_with_retry(url)
+ 185:             self.logger.info("IPC Groups connection test successful")
+ 186:             return True
+ 187:         except Exception as e:
+ 188:             self.logger.error(f"IPC Groups connection test failed: {e}")
+ 189:             return False
+ 190:             
+ 191:     def get_ipca_connection(self) -> bool:
+ 192:         """
+ 193:         Test connection to IPCA (Harmonized European Index) data endpoint.
+ 194:         
+ 195:         Returns:
+ 196:             True if connection successful, False otherwise
+ 197:         """
+ 198:         try:
+ 199:             url = self.urls['ipca']
+ 200:             response = self._make_request_with_retry(url)
+ 201:             self.logger.info("IPCA connection test successful")
+ 202:             return True
+ 203:         except Exception as e:
+ 204:             self.logger.error(f"IPCA connection test failed: {e}")
+ 205:             return False
+ 206:             
+ 207:     def test_all_connections(self) -> Dict[str, bool]:
+ 208:         """
+ 209:         Test connections to all INE data endpoints.
+ 210:         
+ 211:         Returns:
+ 212:             Dictionary with connection test results for each endpoint
+ 213:         """
+ 214:         results = {
+ 215:             'ipc_general': self.get_ipc_general_connection(),
+ 216:             'ipc_groups': self.get_ipc_groups_connection(),
+ 217:             'ipca': self.get_ipca_connection()
+ 218:         }
+ 219:         
+ 220:         successful_connections = sum(results.values())
+ 221:         total_connections = len(results)
+ 222:         
+ 223:         self.logger.info(f"Connection tests completed: {successful_connections}/{total_connections} successful")
+ 224:         
+ 225:         return results
+ 226:         
+ 227:     def download_ipc_general(self, start_date: str, end_date: str) -> pd.DataFrame:
+ 228:         """
+ 229:         Download IPC General (main inflation index) data from INE.
+ 230:         
+ 231:         Args:
+ 232:             start_date: Start date in YYYY-MM-DD format
+ 233:             end_date: End date in YYYY-MM-DD format
+ 234:             
+ 235:         Returns:
+ 236:             DataFrame with IPC General time series data
+ 237:             
+ 238:         Raises:
+ 239:             requests.RequestException: If download fails after all retries
+ 240:             ValueError: If date format is invalid
+ 241:         """
+ 242:         self.logger.info(f"Downloading IPC General data from {start_date} to {end_date}")
+ 243:         
+ 244:         # Validate date format
+ 245:         try:
+ 246:             datetime.strptime(start_date, '%Y-%m-%d')
+ 247:             datetime.strptime(end_date, '%Y-%m-%d')
+ 248:         except ValueError as e:
+ 249:             self.logger.error(f"Invalid date format: {e}")
+ 250:             raise ValueError("Dates must be in YYYY-MM-DD format")
+ 251:             
+ 252:         # Prepare request parameters
+ 253:         url = self.urls['ipc_general']
+ 254:         params = {
+ 255:             'startDate': start_date,
+ 256:             'endDate': end_date,
+ 257:             'format': 'json'
+ 258:         }
+ 259:         
+ 260:         try:
+ 261:             # Make request with retry logic
+ 262:             response = self._make_request_with_retry(url, params)
+ 263:             
+ 264:             # Parse response to DataFrame
+ 265:             df = self._parse_ine_response(response)
+ 266:             
+ 267:             # Standardize column names for IPC General
+ 268:             df = self._standardize_ipc_general_columns(df)
+ 269:             
+ 270:             self.logger.info(f"Successfully downloaded {len(df)} IPC General records")
+ 271:             return df
+ 272:             
+ 273:         except Exception as e:
+ 274:             self.logger.error(f"Failed to download IPC General data: {e}")
+ 275:             raise
+ 276:             
+ 277:     def download_ipc_groups(self, start_date: str, end_date: str) -> pd.DataFrame:
+ 278:         """
+ 279:         Download IPC Groups (sectoral inflation data) from INE.
+ 280:         
+ 281:         Args:
+ 282:             start_date: Start date in YYYY-MM-DD format
+ 283:             end_date: End date in YYYY-MM-DD format
+ 284:             
+ 285:         Returns:
+ 286:             DataFrame with IPC Groups time series data by sector
+ 287:             
+ 288:         Raises:
+ 289:             requests.RequestException: If download fails after all retries
+ 290:             ValueError: If date format is invalid
+ 291:         """
+ 292:         self.logger.info(f"Downloading IPC Groups data from {start_date} to {end_date}")
+ 293:         
+ 294:         # Validate date format
+ 295:         try:
+ 296:             datetime.strptime(start_date, '%Y-%m-%d')
+ 297:             datetime.strptime(end_date, '%Y-%m-%d')
+ 298:         except ValueError as e:
+ 299:             self.logger.error(f"Invalid date format: {e}")
+ 300:             raise ValueError("Dates must be in YYYY-MM-DD format")
+ 301:             
+ 302:         # Prepare request parameters
+ 303:         url = self.urls['ipc_groups']
+ 304:         params = {
+ 305:             'startDate': start_date,
+ 306:             'endDate': end_date,
+ 307:             'format': 'json'
+ 308:         }
+ 309:         
+ 310:         try:
+ 311:             # Make request with retry logic
+ 312:             response = self._make_request_with_retry(url, params)
+ 313:             
+ 314:             # Parse response to DataFrame
+ 315:             df = self._parse_ine_response(response)
+ 316:             
+ 317:             # Standardize column names for IPC Groups
+ 318:             df = self._standardize_ipc_groups_columns(df)
+ 319:             
+ 320:             self.logger.info(f"Successfully downloaded {len(df)} IPC Groups records")
+ 321:             return df
+ 322:             
+ 323:         except Exception as e:
+ 324:             self.logger.error(f"Failed to download IPC Groups data: {e}")
+ 325:             raise
+ 326:             
+ 327:     def download_ipca(self, start_date: str, end_date: str) -> pd.DataFrame:
+ 328:         """
+ 329:         Download IPCA (Harmonized European Index) data from INE.
+ 330:         
+ 331:         Args:
+ 332:             start_date: Start date in YYYY-MM-DD format
+ 333:             end_date: End date in YYYY-MM-DD format
+ 334:             
+ 335:         Returns:
+ 336:             DataFrame with IPCA time series data
+ 337:             
+ 338:         Raises:
+ 339:             requests.RequestException: If download fails after all retries
+ 340:             ValueError: If date format is invalid
+ 341:         """
+ 342:         self.logger.info(f"Downloading IPCA data from {start_date} to {end_date}")
+ 343:         
+ 344:         # Validate date format
+ 345:         try:
+ 346:             datetime.strptime(start_date, '%Y-%m-%d')
+ 347:             datetime.strptime(end_date, '%Y-%m-%d')
+ 348:         except ValueError as e:
+ 349:             self.logger.error(f"Invalid date format: {e}")
+ 350:             raise ValueError("Dates must be in YYYY-MM-DD format")
+ 351:             
+ 352:         # Prepare request parameters
+ 353:         url = self.urls['ipca']
+ 354:         params = {
+ 355:             'startDate': start_date,
+ 356:             'endDate': end_date,
+ 357:             'format': 'json'
+ 358:         }
+ 359:         
+ 360:         try:
+ 361:             # Make request with retry logic
+ 362:             response = self._make_request_with_retry(url, params)
+ 363:             
+ 364:             # Parse response to DataFrame
+ 365:             df = self._parse_ine_response(response)
+ 366:             
+ 367:             # Standardize column names for IPCA
+ 368:             df = self._standardize_ipca_columns(df)
+ 369:             
+ 370:             self.logger.info(f"Successfully downloaded {len(df)} IPCA records")
+ 371:             return df
+ 372:             
+ 373:         except Exception as e:
+ 374:             self.logger.error(f"Failed to download IPCA data: {e}")
+ 375:             raise
+ 376:             
+ 377:     def _standardize_ipc_general_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+ 378:         """
+ 379:         Standardize column names for IPC General data.
+ 380:         
+ 381:         Args:
+ 382:             df: Raw DataFrame from INE API
+ 383:             
+ 384:         Returns:
+ 385:             DataFrame with standardized column names
+ 386:         """
+ 387:         # Common INE column mappings for IPC General
+ 388:         column_mapping = {
+ 389:             'Fecha': 'fecha',
+ 390:             'Date': 'fecha',
+ 391:             'fecha': 'fecha',
+ 392:             'Valor': 'ipc_general',
+ 393:             'Value': 'ipc_general',
+ 394:             'valor': 'ipc_general',
+ 395:             'IPC': 'ipc_general',
+ 396:             'Indice': 'ipc_general',
+ 397:             'Index': 'ipc_general'
+ 398:         }
+ 399:         
+ 400:         # Apply column mapping
+ 401:         df_standardized = df.copy()
+ 402:         for old_name, new_name in column_mapping.items():
+ 403:             if old_name in df_standardized.columns:
+ 404:                 df_standardized = df_standardized.rename(columns={old_name: new_name})
+ 405:                 
+ 406:         # Ensure we have the required columns
+ 407:         required_columns = ['fecha', 'ipc_general']
+ 408:         missing_columns = [col for col in required_columns if col not in df_standardized.columns]
+ 409:         
+ 410:         if missing_columns:
+ 411:             self.logger.warning(f"Missing required columns in IPC General data: {missing_columns}")
+ 412:             # Try to infer from available columns
+ 413:             if len(df_standardized.columns) >= 2:
+ 414:                 df_standardized.columns = ['fecha', 'ipc_general'] + list(df_standardized.columns[2:])
+ 415:                 
+ 416:         return df_standardized
+ 417:         
+ 418:     def _standardize_ipc_groups_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+ 419:         """
+ 420:         Standardize column names for IPC Groups data.
+ 421:         
+ 422:         Args:
+ 423:             df: Raw DataFrame from INE API
+ 424:             
+ 425:         Returns:
+ 426:             DataFrame with standardized column names
+ 427:         """
+ 428:         # Common INE column mappings for IPC Groups
+ 429:         column_mapping = {
+ 430:             'Fecha': 'fecha',
+ 431:             'Date': 'fecha',
+ 432:             'fecha': 'fecha',
+ 433:             'Alimentos y bebidas no alcohólicas': 'ipc_alimentacion',
+ 434:             'Bebidas alcohólicas y tabaco': 'ipc_bebidas_tabaco',
+ 435:             'Vestido y calzado': 'ipc_vestido',
+ 436:             'Vivienda': 'ipc_vivienda',
+ 437:             'Menaje': 'ipc_menaje',
+ 438:             'Medicina': 'ipc_medicina',
+ 439:             'Transporte': 'ipc_transporte',
+ 440:             'Comunicaciones': 'ipc_comunicaciones',
+ 441:             'Ocio y cultura': 'ipc_ocio',
+ 442:             'Enseñanza': 'ipc_ensenanza',
+ 443:             'Hoteles, cafés y restaurantes': 'ipc_hoteles',
+ 444:             'Otros': 'ipc_otros'
+ 445:         }
+ 446:         
+ 447:         # Apply column mapping
+ 448:         df_standardized = df.copy()
+ 449:         for old_name, new_name in column_mapping.items():
+ 450:             if old_name in df_standardized.columns:
+ 451:                 df_standardized = df_standardized.rename(columns={old_name: new_name})
+ 452:                 
+ 453:         return df_standardized
+ 454:         
+ 455:     def _standardize_ipca_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+ 456:         """
+ 457:         Standardize column names for IPCA data.
+ 458:         
+ 459:         Args:
+ 460:             df: Raw DataFrame from INE API
+ 461:             
+ 462:         Returns:
+ 463:             DataFrame with standardized column names
+ 464:         """
+ 465:         # Common INE column mappings for IPCA
+ 466:         column_mapping = {
+ 467:             'Fecha': 'fecha',
+ 468:             'Date': 'fecha',
+ 469:             'fecha': 'fecha',
+ 470:             'Valor': 'ipca',
+ 471:             'Value': 'ipca',
+ 472:             'valor': 'ipca',
+ 473:             'IPCA': 'ipca',
+ 474:             'Indice': 'ipca',
+ 475:             'Index': 'ipca'
+ 476:         }
+ 477:         
+ 478:         # Apply column mapping
+ 479:         df_standardized = df.copy()
+ 480:         for old_name, new_name in column_mapping.items():
+ 481:             if old_name in df_standardized.columns:
+ 482:                 df_standardized = df_standardized.rename(columns={old_name: new_name})
+ 483:                 
+ 484:         # Ensure we have the required columns
+ 485:         required_columns = ['fecha', 'ipca']
+ 486:         missing_columns = [col for col in required_columns if col not in df_standardized.columns]
+ 487:         
+ 488:         if missing_columns:
+ 489:             self.logger.warning(f"Missing required columns in IPCA data: {missing_columns}")
+ 490:             # Try to infer from available columns
+ 491:             if len(df_standardized.columns) >= 2:
+ 492:                 df_standardized.columns = ['fecha', 'ipca'] + list(df_standardized.columns[2:])
+ 493:                 
+ 494:         return df_standardized
+ 495:         
+ 496:     def save_to_csv(self, data: pd.DataFrame, filename: str, data_type: str = "general") -> None:
+ 497:         """
+ 498:         Save DataFrame to CSV with proper formatting and validation.
+ 499:         
+ 500:         Args:
+ 501:             data: DataFrame to save
+ 502:             filename: Output filename (without extension)
+ 503:             data_type: Type of data being saved ("general", "groups", "ipca")
+ 504:             
+ 505:         Raises:
+ 506:             ValueError: If data validation fails
+ 507:             IOError: If file cannot be written
+ 508:         """
+ 509:         self.logger.info(f"Saving {data_type} data to CSV: {filename}")
+ 510:         
+ 511:         # Validate data before saving
+ 512:         if not self._validate_data_for_export(data, data_type):
+ 513:             raise ValueError(f"Data validation failed for {data_type} export")
+ 514:             
+ 515:         # Prepare data for export
+ 516:         df_export = self._prepare_data_for_export(data, data_type)
+ 517:         
+ 518:         # Construct full file path
+ 519:         raw_data_path = self.config['paths']['data']['raw']
+ 520:         full_path = f"{raw_data_path}{filename}.csv"
+ 521:         
+ 522:         try:
+ 523:             # Ensure directory exists
+ 524:             import os
+ 525:             os.makedirs(raw_data_path, exist_ok=True)
+ 526:             
+ 527:             # Save to CSV with configuration settings
+ 528:             encoding = self.config['output']['csv_encoding']
+ 529:             decimal_places = self.config['output']['decimal_places']
+ 530:             
+ 531:             # Round numeric columns to specified decimal places
+ 532:             numeric_columns = df_export.select_dtypes(include=['float64', 'int64']).columns
+ 533:             df_export[numeric_columns] = df_export[numeric_columns].round(decimal_places)
+ 534:             
+ 535:             # Save to CSV
+ 536:             df_export.to_csv(
+ 537:                 full_path,
+ 538:                 index=False,
+ 539:                 encoding=encoding,
+ 540:                 date_format=self.config['output']['date_format']
+ 541:             )
+ 542:             
+ 543:             self.logger.info(f"Successfully saved {len(df_export)} records to {full_path}")
+ 544:             
+ 545:         except Exception as e:
+ 546:             self.logger.error(f"Failed to save data to CSV: {e}")
+ 547:             raise IOError(f"Could not write file {full_path}: {e}")
+ 548:             
+ 549:     def _validate_data_for_export(self, data: pd.DataFrame, data_type: str) -> bool:
+ 550:         """
+ 551:         Validate data before CSV export.
+ 552:         
+ 553:         Args:
+ 554:             data: DataFrame to validate
+ 555:             data_type: Type of data being validated
+ 556:             
+ 557:         Returns:
+ 558:             True if data is valid for export, False otherwise
+ 559:         """
+ 560:         if data.empty:
+ 561:             self.logger.error("Cannot export empty DataFrame")
+ 562:             return False
+ 563:             
+ 564:         # Check for required columns based on data type
+ 565:         required_columns = {
+ 566:             'general': ['fecha', 'ipc_general'],
+ 567:             'groups': ['fecha'],  # Groups can have variable columns
+ 568:             'ipca': ['fecha', 'ipca']
+ 569:         }
+ 570:         
+ 571:         if data_type in required_columns:
+ 572:             missing_columns = [col for col in required_columns[data_type] 
+ 573:                              if col not in data.columns]
+ 574:             if missing_columns:
+ 575:                 self.logger.error(f"Missing required columns for {data_type}: {missing_columns}")
+ 576:                 return False
+ 577:                 
+ 578:         # Check for fecha column format
+ 579:         if 'fecha' in data.columns:
+ 580:             try:
+ 581:                 # Try to convert fecha column to datetime
+ 582:                 pd.to_datetime(data['fecha'])
+ 583:             except Exception as e:
+ 584:                 self.logger.error(f"Invalid date format in fecha column: {e}")
+ 585:                 return False
+ 586:                 
+ 587:         # Check for numeric columns
+ 588:         numeric_columns = data.select_dtypes(include=['float64', 'int64']).columns
+ 589:         for col in numeric_columns:
+ 590:             if data[col].isna().all():
+ 591:                 self.logger.warning(f"Column {col} contains only NaN values")
+ 592:             elif data[col].isna().sum() > len(data) * 0.5:
+ 593:                 self.logger.warning(f"Column {col} has more than 50% missing values")
+ 594:                 
+ 595:         self.logger.info(f"Data validation passed for {data_type} export")
+ 596:         return True
+ 597:         
+ 598:     def _prepare_data_for_export(self, data: pd.DataFrame, data_type: str) -> pd.DataFrame:
+ 599:         """
+ 600:         Prepare data for CSV export with standardized formatting.
+ 601:         
+ 602:         Args:
+ 603:             data: DataFrame to prepare
+ 604:             data_type: Type of data being prepared
+ 605:             
+ 606:         Returns:
+ 607:             Prepared DataFrame ready for export
+ 608:         """
+ 609:         df_prepared = data.copy()
+ 610:         
+ 611:         # Convert fecha column to datetime and format
+ 612:         if 'fecha' in df_prepared.columns:
+ 613:             df_prepared['fecha'] = pd.to_datetime(df_prepared['fecha'])
+ 614:             df_prepared['fecha'] = df_prepared['fecha'].dt.strftime(
+ 615:                 self.config['output']['date_format']
+ 616:             )
+ 617:             
+ 618:         # Sort by date
+ 619:         if 'fecha' in df_prepared.columns:
+ 620:             df_prepared = df_prepared.sort_values('fecha')
+ 621:             
+ 622:         # Reset index
+ 623:         df_prepared = df_prepared.reset_index(drop=True)
+ 624:         
+ 625:         # Add metadata columns
+ 626:         df_prepared['data_type'] = data_type
+ 627:         df_prepared['extraction_date'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+ 628:         
+ 629:         self.logger.info(f"Data prepared for {data_type} export: {len(df_prepared)} records")
+ 630:         return df_prepared
+ 631:         
+ 632:     def export_all_data(self, start_date: str, end_date: str) -> Dict[str, str]:
+ 633:         """
+ 634:         Download and export all types of IPC data to CSV files.
+ 635:         
+ 636:         Args:
+ 637:             start_date: Start date in YYYY-MM-DD format
+ 638:             end_date: End date in YYYY-MM-DD format
+ 639:             
+ 640:         Returns:
+ 641:             Dictionary with file paths for each exported dataset
+ 642:             
+ 643:         Raises:
+ 644:             Exception: If any download or export operation fails
+ 645:         """
+ 646:         self.logger.info(f"Starting complete data export from {start_date} to {end_date}")
+ 647:         
+ 648:         exported_files = {}
+ 649:         
+ 650:         try:
+ 651:             # Download and export IPC General
+ 652:             self.logger.info("Downloading IPC General data...")
+ 653:             ipc_general = self.download_ipc_general(start_date, end_date)
+ 654:             filename_general = f"ipc_general_{start_date}_{end_date}"
+ 655:             self.save_to_csv(ipc_general, filename_general, "general")
+ 656:             exported_files['ipc_general'] = f"{self.config['paths']['data']['raw']}{filename_general}.csv"
+ 657:             
+ 658:             # Download and export IPC Groups
+ 659:             self.logger.info("Downloading IPC Groups data...")
+ 660:             ipc_groups = self.download_ipc_groups(start_date, end_date)
+ 661:             filename_groups = f"ipc_groups_{start_date}_{end_date}"
+ 662:             self.save_to_csv(ipc_groups, filename_groups, "groups")
+ 663:             exported_files['ipc_groups'] = f"{self.config['paths']['data']['raw']}{filename_groups}.csv"
+ 664:             
+ 665:             # Download and export IPCA
+ 666:             self.logger.info("Downloading IPCA data...")
+ 667:             ipca = self.download_ipca(start_date, end_date)
+ 668:             filename_ipca = f"ipca_{start_date}_{end_date}"
+ 669:             self.save_to_csv(ipca, filename_ipca, "ipca")
+ 670:             exported_files['ipca'] = f"{self.config['paths']['data']['raw']}{filename_ipca}.csv"
+ 671:             
+ 672:             self.logger.info("Complete data export finished successfully")
+ 673:             self.logger.info(f"Exported files: {list(exported_files.values())}")
+ 674:             
+ 675:             return exported_files
+ 676:             
+ 677:         except Exception as e:
+ 678:             self.logger.error(f"Data export failed: {e}")
+ 679:             raise
+ 680:             
+ 681:     def get_data_summary(self, data: pd.DataFrame, data_type: str) -> Dict:
+ 682:         """
+ 683:         Generate summary statistics for downloaded data.
+ 684:         
+ 685:         Args:
+ 686:             data: DataFrame to summarize
+ 687:             data_type: Type of data being summarized
+ 688:             
+ 689:         Returns:
+ 690:             Dictionary with summary statistics
+ 691:         """
+ 692:         summary = {
+ 693:             'data_type': data_type,
+ 694:             'total_records': len(data),
+ 695:             'date_range': {},
+ 696:             'columns': list(data.columns),
+ 697:             'missing_values': {},
+ 698:             'numeric_summary': {}
+ 699:         }
+ 700:         
+ 701:         # Date range information
+ 702:         if 'fecha' in data.columns:
+ 703:             dates = pd.to_datetime(data['fecha'])
+ 704:             summary['date_range'] = {
+ 705:                 'start_date': dates.min().strftime('%Y-%m-%d'),
+ 706:                 'end_date': dates.max().strftime('%Y-%m-%d'),
+ 707:                 'total_months': len(dates.unique())
+ 708:             }
+ 709:             
+ 710:         # Missing values analysis
+ 711:         for col in data.columns:
+ 712:             missing_count = data[col].isna().sum()
+ 713:             if missing_count > 0:
+ 714:                 summary['missing_values'][col] = {
+ 715:                     'count': int(missing_count),
+ 716:                     'percentage': round(missing_count / len(data) * 100, 2)
+ 717:                 }
+ 718:                 
+ 719:         # Numeric columns summary
+ 720:         numeric_columns = data.select_dtypes(include=['float64', 'int64']).columns
+ 721:         for col in numeric_columns:
+ 722:             if not data[col].isna().all():
+ 723:                 summary['numeric_summary'][col] = {
+ 724:                     'mean': round(data[col].mean(), 4),
+ 725:                     'std': round(data[col].std(), 4),
+ 726:                     'min': round(data[col].min(), 4),
+ 727:                     'max': round(data[col].max(), 4)
+ 728:                 }
+ 729:                 
+ 730:         return summary
+
+----------------------------------------
+FIN DEL ARCHIVO
+================================================================================

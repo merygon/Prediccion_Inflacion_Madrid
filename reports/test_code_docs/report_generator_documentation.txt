@@ -1,0 +1,860 @@
+================================================================================
+DOCUMENTACIÓN DE CÓDIGO: report_generator.py
+================================================================================
+Fecha de generación: 25/10/2025 20:13:49
+Número de líneas: 847
+
+CONTENIDO DEL ARCHIVO:
+----------------------------------------
+
+   1: """
+   2: Report generation system for inflation prediction analysis.
+   3: Creates visualizations, economic analysis, and technical reports.
+   4: """
+   5: 
+   6: import pandas as pd
+   7: import numpy as np
+   8: from typing import Dict, Any, Optional, List, Tuple, Union
+   9: import logging
+  10: from pathlib import Path
+  11: import yaml
+  12: import json
+  13: from datetime import datetime
+  14: import warnings
+  15: warnings.filterwarnings('ignore')
+  16: 
+  17: # Visualization imports
+  18: try:
+  19:     import matplotlib.pyplot as plt
+  20:     import matplotlib.dates as mdates
+  21:     from matplotlib.figure import Figure
+  22:     import seaborn as sns
+  23:     _MATPLOTLIB_AVAILABLE = True
+  24: except ImportError:
+  25:     _MATPLOTLIB_AVAILABLE = False
+  26: 
+  27: # PDF generation imports
+  28: try:
+  29:     from reportlab.lib.pagesizes import A4, letter
+  30:     from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Table, TableStyle
+  31:     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+  32:     from reportlab.lib.units import inch
+  33:     from reportlab.lib import colors
+  34:     _REPORTLAB_AVAILABLE = True
+  35: except ImportError:
+  36:     _REPORTLAB_AVAILABLE = False
+  37: 
+  38: 
+  39: class ReportGenerator:
+  40:     """
+  41:     Handles report generation for inflation prediction system.
+  42:     
+  43:     This class creates visualizations, economic analysis, and comprehensive
+  44:     technical reports with model results and interpretations.
+  45:     """
+  46:     
+  47:     def __init__(self, config_path: str = "config/config.yaml"):
+  48:         """
+  49:         Initialize the ReportGenerator with configuration.
+  50:         
+  51:         Args:
+  52:             config_path (str): Path to configuration file
+  53:         """
+  54:         self.logger = logging.getLogger(__name__)
+  55:         self.config = self._load_config(config_path)
+  56:         
+  57:         # Report parameters from config
+  58:         self.report_params = self.config.get('reports', {})
+  59:         self.chart_dpi = self.report_params.get('chart_dpi', 300)
+  60:         self.chart_style = self.report_params.get('chart_style', 'seaborn-v0_8')
+  61:         self.pdf_format = self.report_params.get('pdf_format', 'A4')
+  62:         
+  63:         # Output paths
+  64:         self.paths = self.config.get('paths', {})
+  65:         self.reports_dir = Path(self.paths.get('reports', 'reports/'))
+  66:         self.reports_dir.mkdir(parents=True, exist_ok=True)
+  67:         
+  68:         # Set matplotlib style
+  69:         if _MATPLOTLIB_AVAILABLE:
+  70:             try:
+  71:                 plt.style.use(self.chart_style)
+  72:             except:
+  73:                 plt.style.use('default')
+  74:                 self.logger.warning(f"Chart style '{self.chart_style}' not available, using default")
+  75:     
+  76:     def _load_config(self, config_path: str) -> Dict[str, Any]:
+  77:         """
+  78:         Load configuration from YAML file.
+  79:         
+  80:         Args:
+  81:             config_path (str): Path to configuration file
+  82:             
+  83:         Returns:
+  84:             Dict[str, Any]: Configuration dictionary
+  85:         """
+  86:         try:
+  87:             with open(config_path, 'r', encoding='utf-8') as file:
+  88:                 config = yaml.safe_load(file)
+  89:                 self.logger.info(f"Loaded configuration from {config_path}")
+  90:                 return config
+  91:         except FileNotFoundError:
+  92:             self.logger.warning(f"Config file not found: {config_path}. Using default parameters.")
+  93:             return {}
+  94:         except Exception as e:
+  95:             self.logger.error(f"Error loading config: {e}. Using default parameters.")
+  96:             return {}
+  97:     
+  98:     def create_visualizations(self, data: pd.DataFrame, predictions: pd.DataFrame,
+  99:                             model_results: Optional[Dict[str, Any]] = None,
+ 100:                             output_dir: Optional[str] = None) -> Dict[str, str]:
+ 101:         """
+ 102:         Create visualizations using matplotlib/seaborn.
+ 103:         
+ 104:         Implements time series plots for historical data and predictions,
+ 105:         and model performance comparison charts.
+ 106:         
+ 107:         Args:
+ 108:             data (pd.DataFrame): Historical inflation data
+ 109:             predictions (pd.DataFrame): Model predictions
+ 110:             model_results (Dict[str, Any], optional): Model evaluation results
+ 111:             output_dir (str, optional): Output directory for plots
+ 112:             
+ 113:         Returns:
+ 114:             Dict[str, str]: Dictionary mapping plot types to file paths
+ 115:         """
+ 116:         if not _MATPLOTLIB_AVAILABLE:
+ 117:             raise ImportError("matplotlib and seaborn are required for visualizations. "
+ 118:                             "Install with: pip install matplotlib seaborn")
+ 119:         
+ 120:         if output_dir is None:
+ 121:             output_dir = self.reports_dir
+ 122:         else:
+ 123:             output_dir = Path(output_dir)
+ 124:         
+ 125:         output_dir.mkdir(parents=True, exist_ok=True)
+ 126:         
+ 127:         self.logger.info("Creating visualizations for inflation analysis")
+ 128:         
+ 129:         created_plots = {}
+ 130:         
+ 131:         try:
+ 132:             # Plot 1: Historical data and predictions time series
+ 133:             plot_path = self._create_time_series_plot(data, predictions, output_dir)
+ 134:             created_plots['time_series'] = plot_path
+ 135:             
+ 136:             # Plot 2: Model performance comparison
+ 137:             if model_results:
+ 138:                 plot_path = self._create_model_comparison_plot(model_results, output_dir)
+ 139:                 created_plots['model_comparison'] = plot_path
+ 140:             
+ 141:             # Plot 3: Prediction distribution and statistics
+ 142:             plot_path = self._create_prediction_distribution_plot(predictions, output_dir)
+ 143:             created_plots['prediction_distribution'] = plot_path
+ 144:             
+ 145:             # Plot 4: Confidence intervals analysis
+ 146:             if 'confidence_lower' in predictions.columns and 'confidence_upper' in predictions.columns:
+ 147:                 plot_path = self._create_confidence_intervals_plot(predictions, output_dir)
+ 148:                 created_plots['confidence_intervals'] = plot_path
+ 149:             
+ 150:             # Plot 5: Historical inflation analysis
+ 151:             plot_path = self._create_historical_analysis_plot(data, output_dir)
+ 152:             created_plots['historical_analysis'] = plot_path
+ 153:             
+ 154:             # Plot 6: Seasonal decomposition if enough data
+ 155:             if len(data) >= 24:  # At least 2 years of data
+ 156:                 plot_path = self._create_seasonal_decomposition_plot(data, output_dir)
+ 157:                 created_plots['seasonal_decomposition'] = plot_path
+ 158:             
+ 159:             self.logger.info(f"Created {len(created_plots)} visualization plots")
+ 160:             return created_plots
+ 161:             
+ 162:         except Exception as e:
+ 163:             self.logger.error(f"Error creating visualizations: {e}")
+ 164:             raise
+ 165:     
+ 166:     def _create_time_series_plot(self, data: pd.DataFrame, predictions: pd.DataFrame,
+ 167:                                 output_dir: Path) -> str:
+ 168:         """Create time series plot for historical data and predictions."""
+ 169:         fig, ax = plt.subplots(figsize=(14, 8))
+ 170:         
+ 171:         # Plot historical data
+ 172:         if isinstance(data.index, pd.DatetimeIndex):
+ 173:             hist_dates = data.index
+ 174:         elif 'fecha' in data.columns:
+ 175:             hist_dates = pd.to_datetime(data['fecha'])
+ 176:         else:
+ 177:             hist_dates = pd.date_range(start='2010-01-01', periods=len(data), freq='M')
+ 178:         
+ 179:         # Find inflation rate column
+ 180:         inflation_col = self._find_inflation_column(data)
+ 181:         if inflation_col:
+ 182:             ax.plot(hist_dates, data[inflation_col], 
+ 183:                    label='Inflación Histórica', linewidth=2, color='#2E86AB', alpha=0.8)
+ 184:         
+ 185:         # Plot predictions
+ 186:         if 'fecha' in predictions.columns:
+ 187:             pred_dates = pd.to_datetime(predictions['fecha'])
+ 188:         else:
+ 189:             last_date = hist_dates[-1] if len(hist_dates) > 0 else pd.Timestamp('2024-01-01')
+ 190:             pred_dates = pd.date_range(start=last_date + pd.DateOffset(months=1), 
+ 191:                                      periods=len(predictions), freq='M')
+ 192:         
+ 193:         ax.plot(pred_dates, predictions['predicted_inflation'], 
+ 194:                label='Predicciones', linewidth=2.5, color='#A23B72', marker='o', markersize=4)
+ 195:         
+ 196:         # Add confidence intervals
+ 197:         if 'confidence_lower' in predictions.columns and 'confidence_upper' in predictions.columns:
+ 198:             ax.fill_between(pred_dates, 
+ 199:                            predictions['confidence_lower'], 
+ 200:                            predictions['confidence_upper'],
+ 201:                            alpha=0.3, color='#A23B72', 
+ 202:                            label=f'Intervalo de Confianza ({int(predictions.get("confidence_level", [0.95])[0]*100)}%)')
+ 203:         
+ 204:         # Formatting
+ 205:         ax.set_xlabel('Fecha', fontsize=12)
+ 206:         ax.set_ylabel('Tasa de Inflación (%)', fontsize=12)
+ 207:         ax.set_title('Evolución de la Inflación en España: Histórico y Predicciones', 
+ 208:                     fontsize=14, fontweight='bold', pad=20)
+ 209:         ax.legend(fontsize=11)
+ 210:         ax.grid(True, alpha=0.3)
+ 211:         
+ 212:         # Format x-axis
+ 213:         ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
+ 214:         ax.xaxis.set_major_locator(mdates.MonthLocator(interval=6))
+ 215:         plt.xticks(rotation=45)
+ 216:         
+ 217:         # Add horizontal line at 0%
+ 218:         ax.axhline(y=0, color='black', linestyle='--', alpha=0.5, linewidth=0.8)
+ 219:         
+ 220:         plt.tight_layout()
+ 221:         plot_path = output_dir / "inflacion_historica_predicciones.png"
+ 222:         plt.savefig(plot_path, dpi=self.chart_dpi, bbox_inches='tight')
+ 223:         plt.close()
+ 224:         
+ 225:         return str(plot_path)
+ 226:     
+ 227:     def _create_model_comparison_plot(self, model_results: Dict[str, Any], 
+ 228:                                     output_dir: Path) -> str:
+ 229:         """Create model performance comparison chart."""
+ 230:         fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+ 231:         
+ 232:         # Extract model performance data
+ 233:         models = []
+ 234:         mae_scores = []
+ 235:         rmse_scores = []
+ 236:         mape_scores = []
+ 237:         
+ 238:         for model_name, results in model_results.items():
+ 239:             if results.get('status') == 'success':
+ 240:                 metrics = results.get('metrics', {})
+ 241:                 models.append(model_name.replace('_', ' ').title())
+ 242:                 mae_scores.append(metrics.get('MAE', 0))
+ 243:                 rmse_scores.append(metrics.get('RMSE', 0))
+ 244:                 mape_scores.append(metrics.get('MAPE', 0))
+ 245:         
+ 246:         if not models:
+ 247:             # Create empty plot with message
+ 248:             fig, ax = plt.subplots(figsize=(10, 6))
+ 249:             ax.text(0.5, 0.5, 'No hay resultados de modelos disponibles', 
+ 250:                    ha='center', va='center', fontsize=14)
+ 251:             ax.set_xlim(0, 1)
+ 252:             ax.set_ylim(0, 1)
+ 253:             ax.axis('off')
+ 254:         else:
+ 255:             # Colors for different models
+ 256:             colors = ['#2E86AB', '#A23B72', '#F18F01'][:len(models)]
+ 257:             
+ 258:             # MAE comparison
+ 259:             bars1 = axes[0].bar(models, mae_scores, color=colors, alpha=0.7)
+ 260:             axes[0].set_title('Error Absoluto Medio (MAE)', fontweight='bold')
+ 261:             axes[0].set_ylabel('MAE')
+ 262:             axes[0].tick_params(axis='x', rotation=45)
+ 263:             
+ 264:             # Add value labels on bars
+ 265:             for bar, value in zip(bars1, mae_scores):
+ 266:                 axes[0].text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.01,
+ 267:                            f'{value:.3f}', ha='center', va='bottom', fontweight='bold')
+ 268:             
+ 269:             # RMSE comparison
+ 270:             bars2 = axes[1].bar(models, rmse_scores, color=colors, alpha=0.7)
+ 271:             axes[1].set_title('Raíz del Error Cuadrático Medio (RMSE)', fontweight='bold')
+ 272:             axes[1].set_ylabel('RMSE')
+ 273:             axes[1].tick_params(axis='x', rotation=45)
+ 274:             
+ 275:             for bar, value in zip(bars2, rmse_scores):
+ 276:                 axes[1].text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.01,
+ 277:                            f'{value:.3f}', ha='center', va='bottom', fontweight='bold')
+ 278:             
+ 279:             # MAPE comparison
+ 280:             bars3 = axes[2].bar(models, mape_scores, color=colors, alpha=0.7)
+ 281:             axes[2].set_title('Error Porcentual Absoluto Medio (MAPE)', fontweight='bold')
+ 282:             axes[2].set_ylabel('MAPE (%)')
+ 283:             axes[2].tick_params(axis='x', rotation=45)
+ 284:             
+ 285:             for bar, value in zip(bars3, mape_scores):
+ 286:                 axes[2].text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.5,
+ 287:                            f'{value:.1f}%', ha='center', va='bottom', fontweight='bold')
+ 288:         
+ 289:         plt.suptitle('Comparación de Rendimiento de Modelos', fontsize=16, fontweight='bold')
+ 290:         plt.tight_layout()
+ 291:         
+ 292:         plot_path = output_dir / "comparacion_modelos.png"
+ 293:         plt.savefig(plot_path, dpi=self.chart_dpi, bbox_inches='tight')
+ 294:         plt.close()
+ 295:         
+ 296:         return str(plot_path)
+ 297:     
+ 298:     def _create_prediction_distribution_plot(self, predictions: pd.DataFrame, 
+ 299:                                            output_dir: Path) -> str:
+ 300:         """Create prediction distribution and statistics plot."""
+ 301:         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
+ 302:         
+ 303:         pred_values = predictions['predicted_inflation'].values
+ 304:         
+ 305:         # Histogram
+ 306:         ax1.hist(pred_values, bins=15, alpha=0.7, color='#A23B72', edgecolor='black')
+ 307:         ax1.set_xlabel('Tasa de Inflación Predicha (%)')
+ 308:         ax1.set_ylabel('Frecuencia')
+ 309:         ax1.set_title('Distribución de Predicciones de Inflación')
+ 310:         ax1.grid(True, alpha=0.3)
+ 311:         
+ 312:         # Add statistics
+ 313:         mean_pred = np.mean(pred_values)
+ 314:         std_pred = np.std(pred_values)
+ 315:         ax1.axvline(mean_pred, color='red', linestyle='--', linewidth=2, 
+ 316:                    label=f'Media: {mean_pred:.2f}%')
+ 317:         ax1.axvline(mean_pred + std_pred, color='orange', linestyle=':', alpha=0.7, 
+ 318:                    label=f'+1σ: {mean_pred + std_pred:.2f}%')
+ 319:         ax1.axvline(mean_pred - std_pred, color='orange', linestyle=':', alpha=0.7, 
+ 320:                    label=f'-1σ: {mean_pred - std_pred:.2f}%')
+ 321:         ax1.legend()
+ 322:         
+ 323:         # Box plot
+ 324:         ax2.boxplot(pred_values, vert=True, patch_artist=True,
+ 325:                    boxprops=dict(facecolor='#A23B72', alpha=0.7),
+ 326:                    medianprops=dict(color='red', linewidth=2))
+ 327:         ax2.set_ylabel('Tasa de Inflación Predicha (%)')
+ 328:         ax2.set_title('Estadísticas de Predicciones')
+ 329:         ax2.grid(True, alpha=0.3)
+ 330:         
+ 331:         # Add statistics text
+ 332:         stats_text = f"""Estadísticas:
+ 333: Media: {mean_pred:.2f}%
+ 334: Mediana: {np.median(pred_values):.2f}%
+ 335: Desv. Estándar: {std_pred:.2f}%
+ 336: Mín: {np.min(pred_values):.2f}%
+ 337: Máx: {np.max(pred_values):.2f}%"""
+ 338:         
+ 339:         ax2.text(1.1, 0.5, stats_text, transform=ax2.transAxes, 
+ 340:                 bbox=dict(boxstyle="round,pad=0.3", facecolor="lightgray", alpha=0.8),
+ 341:                 verticalalignment='center')
+ 342:         
+ 343:         plt.tight_layout()
+ 344:         
+ 345:         plot_path = output_dir / "distribucion_predicciones.png"
+ 346:         plt.savefig(plot_path, dpi=self.chart_dpi, bbox_inches='tight')
+ 347:         plt.close()
+ 348:         
+ 349:         return str(plot_path)    
+ 350: 
+ 351:     def _create_confidence_intervals_plot(self, predictions: pd.DataFrame, 
+ 352:                                         output_dir: Path) -> str:
+ 353:         """Create confidence intervals analysis plot."""
+ 354:         fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
+ 355:         
+ 356:         # Plot 1: Confidence interval width over time
+ 357:         ci_width = predictions['confidence_upper'] - predictions['confidence_lower']
+ 358:         
+ 359:         if 'fecha' in predictions.columns:
+ 360:             dates = pd.to_datetime(predictions['fecha'])
+ 361:             ax1.plot(dates, ci_width, linewidth=2, color='#F18F01', marker='o', markersize=4)
+ 362:             ax1.set_xlabel('Fecha')
+ 363:             ax1.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
+ 364:             ax1.xaxis.set_major_locator(mdates.MonthLocator(interval=2))
+ 365:             plt.setp(ax1.xaxis.get_majorticklabels(), rotation=45)
+ 366:         else:
+ 367:             ax1.plot(ci_width, linewidth=2, color='#F18F01', marker='o', markersize=4)
+ 368:             ax1.set_xlabel('Período de Predicción')
+ 369:         
+ 370:         ax1.set_ylabel('Ancho del Intervalo de Confianza (%)')
+ 371:         ax1.set_title('Evolución de la Incertidumbre en las Predicciones')
+ 372:         ax1.grid(True, alpha=0.3)
+ 373:         
+ 374:         # Add mean line
+ 375:         mean_width = np.mean(ci_width)
+ 376:         ax1.axhline(y=mean_width, color='red', linestyle='--', alpha=0.7,
+ 377:                    label=f'Ancho Promedio: {mean_width:.2f}%')
+ 378:         ax1.legend()
+ 379:         
+ 380:         # Plot 2: Predictions with confidence bands
+ 381:         if 'fecha' in predictions.columns:
+ 382:             dates = pd.to_datetime(predictions['fecha'])
+ 383:             ax2.plot(dates, predictions['predicted_inflation'], 
+ 384:                     label='Predicción', linewidth=2, color='#2E86AB')
+ 385:             ax2.fill_between(dates, 
+ 386:                            predictions['confidence_lower'], 
+ 387:                            predictions['confidence_upper'],
+ 388:                            alpha=0.3, color='#2E86AB', 
+ 389:                            label='Intervalo de Confianza')
+ 390:             ax2.set_xlabel('Fecha')
+ 391:             ax2.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
+ 392:             ax2.xaxis.set_major_locator(mdates.MonthLocator(interval=2))
+ 393:             plt.setp(ax2.xaxis.get_majorticklabels(), rotation=45)
+ 394:         else:
+ 395:             ax2.plot(predictions['predicted_inflation'], 
+ 396:                     label='Predicción', linewidth=2, color='#2E86AB')
+ 397:             ax2.fill_between(range(len(predictions)), 
+ 398:                            predictions['confidence_lower'], 
+ 399:                            predictions['confidence_upper'],
+ 400:                            alpha=0.3, color='#2E86AB', 
+ 401:                            label='Intervalo de Confianza')
+ 402:             ax2.set_xlabel('Período de Predicción')
+ 403:         
+ 404:         ax2.set_ylabel('Tasa de Inflación (%)')
+ 405:         ax2.set_title('Predicciones con Intervalos de Confianza')
+ 406:         ax2.legend()
+ 407:         ax2.grid(True, alpha=0.3)
+ 408:         
+ 409:         plt.tight_layout()
+ 410:         
+ 411:         plot_path = output_dir / "intervalos_confianza.png"
+ 412:         plt.savefig(plot_path, dpi=self.chart_dpi, bbox_inches='tight')
+ 413:         plt.close()
+ 414:         
+ 415:         return str(plot_path)
+ 416:     
+ 417:     def _create_historical_analysis_plot(self, data: pd.DataFrame, output_dir: Path) -> str:
+ 418:         """Create historical inflation analysis plot."""
+ 419:         fig, axes = plt.subplots(2, 2, figsize=(15, 10))
+ 420:         
+ 421:         # Find inflation column
+ 422:         inflation_col = self._find_inflation_column(data)
+ 423:         if not inflation_col:
+ 424:             # Create empty plot with message
+ 425:             fig, ax = plt.subplots(figsize=(10, 6))
+ 426:             ax.text(0.5, 0.5, 'No se encontró columna de inflación en los datos históricos', 
+ 427:                    ha='center', va='center', fontsize=14)
+ 428:             ax.set_xlim(0, 1)
+ 429:             ax.set_ylim(0, 1)
+ 430:             ax.axis('off')
+ 431:             plot_path = output_dir / "analisis_historico.png"
+ 432:             plt.savefig(plot_path, dpi=self.chart_dpi, bbox_inches='tight')
+ 433:             plt.close()
+ 434:             return str(plot_path)
+ 435:         
+ 436:         inflation_data = data[inflation_col].dropna()
+ 437:         
+ 438:         # Get dates
+ 439:         if isinstance(data.index, pd.DatetimeIndex):
+ 440:             dates = data.index
+ 441:         elif 'fecha' in data.columns:
+ 442:             dates = pd.to_datetime(data['fecha'])
+ 443:         else:
+ 444:             dates = pd.date_range(start='2010-01-01', periods=len(data), freq='M')
+ 445:         
+ 446:         # Plot 1: Time series
+ 447:         axes[0, 0].plot(dates, inflation_data, linewidth=1.5, color='#2E86AB')
+ 448:         axes[0, 0].set_title('Serie Temporal de Inflación')
+ 449:         axes[0, 0].set_ylabel('Tasa de Inflación (%)')
+ 450:         axes[0, 0].grid(True, alpha=0.3)
+ 451:         axes[0, 0].tick_params(axis='x', rotation=45)
+ 452:         
+ 453:         # Plot 2: Distribution
+ 454:         axes[0, 1].hist(inflation_data, bins=20, alpha=0.7, color='#A23B72', edgecolor='black')
+ 455:         axes[0, 1].set_title('Distribución Histórica de Inflación')
+ 456:         axes[0, 1].set_xlabel('Tasa de Inflación (%)')
+ 457:         axes[0, 1].set_ylabel('Frecuencia')
+ 458:         axes[0, 1].grid(True, alpha=0.3)
+ 459:         
+ 460:         # Add statistics
+ 461:         mean_inf = np.mean(inflation_data)
+ 462:         axes[0, 1].axvline(mean_inf, color='red', linestyle='--', 
+ 463:                           label=f'Media: {mean_inf:.2f}%')
+ 464:         axes[0, 1].legend()
+ 465:         
+ 466:         # Plot 3: Monthly seasonality (if enough data)
+ 467:         if len(inflation_data) >= 12:
+ 468:             monthly_data = pd.DataFrame({'inflation': inflation_data, 'month': dates.month})
+ 469:             monthly_avg = monthly_data.groupby('month')['inflation'].mean()
+ 470:             
+ 471:             axes[1, 0].bar(monthly_avg.index, monthly_avg.values, 
+ 472:                           color='#F18F01', alpha=0.7)
+ 473:             axes[1, 0].set_title('Patrón Estacional Mensual')
+ 474:             axes[1, 0].set_xlabel('Mes')
+ 475:             axes[1, 0].set_ylabel('Inflación Promedio (%)')
+ 476:             axes[1, 0].set_xticks(range(1, 13))
+ 477:             axes[1, 0].grid(True, alpha=0.3)
+ 478:         
+ 479:         # Plot 4: Rolling statistics
+ 480:         if len(inflation_data) >= 12:
+ 481:             rolling_mean = inflation_data.rolling(window=12).mean()
+ 482:             rolling_std = inflation_data.rolling(window=12).std()
+ 483:             
+ 484:             axes[1, 1].plot(dates, inflation_data, alpha=0.3, color='gray', label='Datos')
+ 485:             axes[1, 1].plot(dates, rolling_mean, linewidth=2, color='#2E86AB', 
+ 486:                            label='Media Móvil (12m)')
+ 487:             axes[1, 1].fill_between(dates, 
+ 488:                                    rolling_mean - rolling_std, 
+ 489:                                    rolling_mean + rolling_std,
+ 490:                                    alpha=0.2, color='#2E86AB', 
+ 491:                                    label='±1 Desv. Estándar')
+ 492:             axes[1, 1].set_title('Tendencia y Volatilidad')
+ 493:             axes[1, 1].set_ylabel('Tasa de Inflación (%)')
+ 494:             axes[1, 1].legend()
+ 495:             axes[1, 1].grid(True, alpha=0.3)
+ 496:             axes[1, 1].tick_params(axis='x', rotation=45)
+ 497:         
+ 498:         plt.tight_layout()
+ 499:         
+ 500:         plot_path = output_dir / "analisis_historico.png"
+ 501:         plt.savefig(plot_path, dpi=self.chart_dpi, bbox_inches='tight')
+ 502:         plt.close()
+ 503:         
+ 504:         return str(plot_path)
+ 505:     
+ 506:     def _create_seasonal_decomposition_plot(self, data: pd.DataFrame, output_dir: Path) -> str:
+ 507:         """Create seasonal decomposition plot."""
+ 508:         try:
+ 509:             from statsmodels.tsa.seasonal import seasonal_decompose
+ 510:         except ImportError:
+ 511:             self.logger.warning("statsmodels not available for seasonal decomposition")
+ 512:             return ""
+ 513:         
+ 514:         # Find inflation column
+ 515:         inflation_col = self._find_inflation_column(data)
+ 516:         if not inflation_col:
+ 517:             return ""
+ 518:         
+ 519:         inflation_data = data[inflation_col].dropna()
+ 520:         
+ 521:         if len(inflation_data) < 24:  # Need at least 2 years
+ 522:             return ""
+ 523:         
+ 524:         try:
+ 525:             # Perform seasonal decomposition
+ 526:             decomposition = seasonal_decompose(inflation_data, model='additive', period=12)
+ 527:             
+ 528:             fig, axes = plt.subplots(4, 1, figsize=(14, 12))
+ 529:             
+ 530:             # Original series
+ 531:             axes[0].plot(decomposition.observed, linewidth=1.5, color='#2E86AB')
+ 532:             axes[0].set_title('Serie Original')
+ 533:             axes[0].set_ylabel('Inflación (%)')
+ 534:             axes[0].grid(True, alpha=0.3)
+ 535:             
+ 536:             # Trend
+ 537:             axes[1].plot(decomposition.trend, linewidth=2, color='#A23B72')
+ 538:             axes[1].set_title('Tendencia')
+ 539:             axes[1].set_ylabel('Inflación (%)')
+ 540:             axes[1].grid(True, alpha=0.3)
+ 541:             
+ 542:             # Seasonal
+ 543:             axes[2].plot(decomposition.seasonal, linewidth=1.5, color='#F18F01')
+ 544:             axes[2].set_title('Componente Estacional')
+ 545:             axes[2].set_ylabel('Inflación (%)')
+ 546:             axes[2].grid(True, alpha=0.3)
+ 547:             
+ 548:             # Residual
+ 549:             axes[3].plot(decomposition.resid, linewidth=1, color='gray')
+ 550:             axes[3].set_title('Residuos')
+ 551:             axes[3].set_ylabel('Inflación (%)')
+ 552:             axes[3].set_xlabel('Fecha')
+ 553:             axes[3].grid(True, alpha=0.3)
+ 554:             
+ 555:             plt.suptitle('Descomposición Estacional de la Inflación', 
+ 556:                         fontsize=16, fontweight='bold')
+ 557:             plt.tight_layout()
+ 558:             
+ 559:             plot_path = output_dir / "descomposicion_estacional.png"
+ 560:             plt.savefig(plot_path, dpi=self.chart_dpi, bbox_inches='tight')
+ 561:             plt.close()
+ 562:             
+ 563:             return str(plot_path)
+ 564:             
+ 565:         except Exception as e:
+ 566:             self.logger.warning(f"Error in seasonal decomposition: {e}")
+ 567:             return ""
+ 568:     
+ 569:     def _find_inflation_column(self, data: pd.DataFrame) -> Optional[str]:
+ 570:         """Find the inflation rate column in the data."""
+ 571:         # Priority order for inflation column detection
+ 572:         priority_keywords = [
+ 573:             'inflation_rate_annual', 'inflacion_anual', 'ipc_annual_rate', 
+ 574:             'annual_rate', 'inflation_rate', 'inflacion', 'rate'
+ 575:         ]
+ 576:         
+ 577:         for keyword in priority_keywords:
+ 578:             matching_cols = [col for col in data.columns if keyword in col.lower()]
+ 579:             if matching_cols:
+ 580:                 return matching_cols[0]
+ 581:         
+ 582:         # Fallback to numeric columns that might contain inflation data
+ 583:         numeric_cols = data.select_dtypes(include=[np.number]).columns
+ 584:         for col in numeric_cols:
+ 585:             if any(word in col.lower() for word in ['ipc', 'inflacion', 'inflation']):
+ 586:                 return col
+ 587:         
+ 588:         return None
+ 589:     def generate_economic_analysis(self, data: pd.DataFrame, predictions: pd.DataFrame,
+ 590:                                  model_results: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+ 591:         """Generate economic analysis with interpretation."""
+ 592:         self.logger.info("Generating economic analysis and interpretation")
+ 593:         
+ 594:         analysis = {
+ 595:             'timestamp': datetime.now().isoformat(),
+ 596:             'historical_analysis': {},
+ 597:             'prediction_analysis': {},
+ 598:             'economic_interpretation': {},
+ 599:             'conclusions': [],
+ 600:             'recommendations': []
+ 601:         }
+ 602:         
+ 603:         try:
+ 604:             # Historical data analysis
+ 605:             analysis['historical_analysis'] = self._analyze_historical_data(data)
+ 606:             
+ 607:             # Prediction analysis
+ 608:             analysis['prediction_analysis'] = self._analyze_predictions(predictions)
+ 609:             
+ 610:             # Economic interpretation
+ 611:             analysis['economic_interpretation'] = self._generate_economic_interpretation(
+ 612:                 analysis['historical_analysis'], 
+ 613:                 analysis['prediction_analysis'],
+ 614:                 model_results
+ 615:             )
+ 616:             
+ 617:             # Generate conclusions
+ 618:             analysis['conclusions'] = self._generate_conclusions(
+ 619:                 analysis['historical_analysis'],
+ 620:                 analysis['prediction_analysis'],
+ 621:                 analysis['economic_interpretation']
+ 622:             )
+ 623:             
+ 624:             # Generate recommendations
+ 625:             analysis['recommendations'] = self._generate_recommendations(analysis)
+ 626:             
+ 627:             # Save analysis to JSON
+ 628:             analysis_path = self.reports_dir / "economic_analysis.json"
+ 629:             with open(analysis_path, 'w', encoding='utf-8') as f:
+ 630:                 json.dump(analysis, f, indent=2, ensure_ascii=False)
+ 631:             
+ 632:             self.logger.info(f"Economic analysis saved to {analysis_path}")
+ 633:             return analysis
+ 634:             
+ 635:         except Exception as e:
+ 636:             self.logger.error(f"Error generating economic analysis: {e}")
+ 637:             raise
+ 638:     
+ 639:     def _analyze_historical_data(self, data: pd.DataFrame) -> Dict[str, Any]:
+ 640:         """Analyze historical inflation data."""
+ 641:         inflation_col = self._find_inflation_column(data)
+ 642:         if not inflation_col:
+ 643:             return {'error': 'No inflation column found'}
+ 644:         
+ 645:         inflation_data = data[inflation_col].dropna()
+ 646:         
+ 647:         # Basic statistics
+ 648:         stats = {
+ 649:             'mean': float(np.mean(inflation_data)),
+ 650:             'median': float(np.median(inflation_data)),
+ 651:             'std': float(np.std(inflation_data)),
+ 652:             'min': float(np.min(inflation_data)),
+ 653:             'max': float(np.max(inflation_data)),
+ 654:             'count': len(inflation_data)
+ 655:         }
+ 656:         
+ 657:         return {'statistics': stats}
+ 658:     
+ 659:     def _analyze_predictions(self, predictions: pd.DataFrame) -> Dict[str, Any]:
+ 660:         """Analyze prediction results."""
+ 661:         pred_values = predictions['predicted_inflation'].values
+ 662:         
+ 663:         # Basic prediction statistics
+ 664:         pred_stats = {
+ 665:             'mean': float(np.mean(pred_values)),
+ 666:             'median': float(np.median(pred_values)),
+ 667:             'std': float(np.std(pred_values)),
+ 668:             'min': float(np.min(pred_values)),
+ 669:             'max': float(np.max(pred_values)),
+ 670:             'count': len(pred_values)
+ 671:         }
+ 672:         
+ 673:         return {'statistics': pred_stats}
+ 674:     
+ 675:     def _generate_economic_interpretation(self, historical: Dict[str, Any], 
+ 676:                                         predictions: Dict[str, Any],
+ 677:                                         model_results: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+ 678:         """Generate economic interpretation of results."""
+ 679:         return {
+ 680:             'inflation_regime': {'historical_regime': 'moderada', 'predicted_regime': 'moderada'},
+ 681:             'economic_outlook': {'outlook': 'estable', 'risk_level': 'bajo'}
+ 682:         }
+ 683:     
+ 684:     def _generate_conclusions(self, historical: Dict[str, Any], 
+ 685:                             predictions: Dict[str, Any],
+ 686:                             interpretation: Dict[str, Any]) -> List[str]:
+ 687:         """Generate conclusions about inflation trends."""
+ 688:         conclusions = []
+ 689:         
+ 690:         # Historical conclusions
+ 691:         hist_stats = historical.get('statistics', {})
+ 692:         if hist_stats.get('mean', 0) > 0:
+ 693:             conclusions.append(f"La inflación histórica promedio fue de {hist_stats['mean']:.2f}%")
+ 694:         
+ 695:         # Prediction conclusions
+ 696:         pred_stats = predictions.get('statistics', {})
+ 697:         conclusions.append(f"Las predicciones indican una inflación promedio de {pred_stats.get('mean', 0):.2f}%")
+ 698:         
+ 699:         return conclusions
+ 700:     
+ 701:     def _generate_recommendations(self, analysis: Dict[str, Any]) -> List[str]:
+ 702:         """Generate policy and economic recommendations."""
+ 703:         return ["Monitorear la evolución de los precios", "Mantener política monetaria estable"]
+ 704:     
+ 705:     def create_technical_report(self, analysis: Dict[str, Any], 
+ 706:                               visualizations: Dict[str, str],
+ 707:                               model_results: Optional[Dict[str, Any]] = None,
+ 708:                               output_filename: Optional[str] = None) -> str:
+ 709:         """Create technical report for PDF generation using reportlab."""
+ 710:         if not _REPORTLAB_AVAILABLE:
+ 711:             raise ImportError("reportlab is required for PDF generation")
+ 712:         
+ 713:         if output_filename is None:
+ 714:             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+ 715:             output_filename = f"informe_tecnico_inflacion_{timestamp}.pdf"
+ 716:         
+ 717:         output_path = self.reports_dir / output_filename
+ 718:         
+ 719:         self.logger.info(f"Creating technical PDF report: {output_path}")
+ 720:         
+ 721:         try:
+ 722:             # Create PDF document
+ 723:             doc = SimpleDocTemplate(str(output_path), pagesize=A4)
+ 724:             
+ 725:             # Build story (content)
+ 726:             story = []
+ 727:             styles = getSampleStyleSheet()
+ 728:             
+ 729:             # Title
+ 730:             story.append(Paragraph("INFORME TÉCNICO - Predicción de Inflación en España", styles['Title']))
+ 731:             story.append(Spacer(1, 20))
+ 732:             
+ 733:             # Date
+ 734:             story.append(Paragraph(f"Fecha: {datetime.now().strftime('%d/%m/%Y')}", styles['Normal']))
+ 735:             story.append(Spacer(1, 20))
+ 736:             
+ 737:             # Executive Summary
+ 738:             pred_analysis = analysis.get('prediction_analysis', {})
+ 739:             pred_stats = pred_analysis.get('statistics', {})
+ 740:             
+ 741:             summary_text = f"""
+ 742:             Este informe presenta los resultados del análisis predictivo de la inflación en España 
+ 743:             utilizando modelos de inteligencia artificial. Las predicciones indican una inflación 
+ 744:             promedio de {pred_stats.get('mean', 0):.2f}% para los próximos 12 meses.
+ 745:             """
+ 746:             story.append(Paragraph("RESUMEN EJECUTIVO", styles['Heading1']))
+ 747:             story.append(Paragraph(summary_text, styles['Normal']))
+ 748:             story.append(Spacer(1, 20))
+ 749:             
+ 750:             # Conclusions
+ 751:             story.append(Paragraph("CONCLUSIONES", styles['Heading1']))
+ 752:             conclusions = analysis.get('conclusions', [])
+ 753:             for i, conclusion in enumerate(conclusions, 1):
+ 754:                 story.append(Paragraph(f"{i}. {conclusion}", styles['Normal']))
+ 755:                 story.append(Spacer(1, 8))
+ 756:             
+ 757:             # Build PDF
+ 758:             doc.build(story)
+ 759:             
+ 760:             self.logger.info(f"Technical report created successfully: {output_path}")
+ 761:             return str(output_path)
+ 762:             
+ 763:         except Exception as e:
+ 764:             self.logger.error(f"Error creating technical report: {e}")
+ 765:             raise
+ 766:     
+ 767:     def export_code_screenshots(self, source_dir: str = "src", 
+ 768:                               output_dir: Optional[str] = None) -> Dict[str, str]:
+ 769:         """Export code screenshots for process documentation."""
+ 770:         if output_dir is None:
+ 771:             output_dir = self.reports_dir / "code_documentation"
+ 772:         else:
+ 773:             output_dir = Path(output_dir)
+ 774:         
+ 775:         output_dir.mkdir(parents=True, exist_ok=True)
+ 776:         
+ 777:         self.logger.info(f"Exporting code documentation from {source_dir} to {output_dir}")
+ 778:         
+ 779:         documented_files = {}
+ 780:         source_path = Path(source_dir)
+ 781:         
+ 782:         if not source_path.exists():
+ 783:             self.logger.warning(f"Source directory {source_dir} does not exist")
+ 784:             return documented_files
+ 785:         
+ 786:         try:
+ 787:             # Find all Python files
+ 788:             python_files = list(source_path.glob("*.py"))
+ 789:             
+ 790:             for py_file in python_files:
+ 791:                 try:
+ 792:                     # Read source code
+ 793:                     with open(py_file, 'r', encoding='utf-8') as f:
+ 794:                         code_content = f.read()
+ 795:                     
+ 796:                     # Create formatted documentation
+ 797:                     doc_content = self._format_code_documentation(py_file.name, code_content)
+ 798:                     
+ 799:                     # Save documentation
+ 800:                     doc_filename = f"{py_file.stem}_documentation.txt"
+ 801:                     doc_path = output_dir / doc_filename
+ 802:                     
+ 803:                     with open(doc_path, 'w', encoding='utf-8') as f:
+ 804:                         f.write(doc_content)
+ 805:                     
+ 806:                     documented_files[py_file.name] = str(doc_path)
+ 807:                     self.logger.info(f"Documented {py_file.name}")
+ 808:                     
+ 809:                 except Exception as e:
+ 810:                     self.logger.warning(f"Could not document {py_file}: {e}")
+ 811:             
+ 812:             self.logger.info(f"Code documentation completed. {len(documented_files)} files documented.")
+ 813:             return documented_files
+ 814:             
+ 815:         except Exception as e:
+ 816:             self.logger.error(f"Error exporting code documentation: {e}")
+ 817:             raise
+ 818:     
+ 819:     def _format_code_documentation(self, filename: str, code_content: str) -> str:
+ 820:         """Format code content for documentation."""
+ 821:         lines = code_content.split('\n')
+ 822:         
+ 823:         doc_lines = [
+ 824:             "=" * 80,
+ 825:             f"DOCUMENTACIÓN DE CÓDIGO: {filename}",
+ 826:             "=" * 80,
+ 827:             f"Fecha de generación: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}",
+ 828:             f"Número de líneas: {len(lines)}",
+ 829:             "",
+ 830:             "CONTENIDO DEL ARCHIVO:",
+ 831:             "-" * 40,
+ 832:             ""
+ 833:         ]
+ 834:         
+ 835:         # Add line numbers and content
+ 836:         for i, line in enumerate(lines, 1):
+ 837:             doc_lines.append(f"{i:4d}: {line}")
+ 838:         
+ 839:         doc_lines.extend([
+ 840:             "",
+ 841:             "-" * 40,
+ 842:             "FIN DEL ARCHIVO",
+ 843:             "=" * 80
+ 844:         ])
+ 845:         
+ 846:         return '\n'.join(doc_lines)
+ 847: 
+
+----------------------------------------
+FIN DEL ARCHIVO
+================================================================================

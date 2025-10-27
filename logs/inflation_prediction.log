@@ -1,0 +1,344 @@
+2025-10-27 16:51:07,869 - InflationPipeline - INFO - ================================================================================
+2025-10-27 16:51:07,870 - InflationPipeline - INFO - STARTING SPANISH INFLATION PREDICTION PIPELINE
+2025-10-27 16:51:07,870 - InflationPipeline - INFO - ================================================================================
+2025-10-27 16:51:07,871 - InflationPipeline - INFO - System Info: 16 CPUs, 31.3GB total memory, 13.5GB available
+2025-10-27 16:51:07,871 - InflationPipeline - INFO - Estimated pipeline duration: 2.1 minutes
+2025-10-27 16:51:07,881 - InflationPipeline - INFO - Validating configuration...
+2025-10-27 16:51:07,882 - InflationPipeline - INFO - Configuration validation completed successfully
+2025-10-27 16:51:07,887 - InflationPipeline - INFO - Initializing pipeline modules...
+2025-10-27 16:51:07,913 - InflationPipeline - INFO - All modules initialized successfully
+2025-10-27 16:51:07,914 - InflationPipeline - INFO - 
+------------------------------------------------------------
+2025-10-27 16:51:07,914 - InflationPipeline - INFO - EXECUTING: Step 1: Data Extraction
+2025-10-27 16:51:07,914 - InflationPipeline - INFO - ------------------------------------------------------------
+2025-10-27 16:51:07,914 - InflationPipeline - INFO - Starting data_extraction...
+2025-10-27 16:51:07,914 - InflationPipeline - INFO - Testing INE API connections...
+2025-10-27 16:51:14,832 - InflationPipeline - INFO - Downloading INE data from 2002-01-01 to 2024-12-31...
+2025-10-27 16:51:15,943 - InflationPipeline - ERROR - Error in step 'data_extraction': Data validation failed for general export
+2025-10-27 16:51:15,945 - InflationPipeline - ERROR - Traceback: Traceback (most recent call last):
+  File "c:\Users\meryg\Desktop\ICAI IMAT\4º\Economía y Empresa\Extra\Analisis_Inflacion\Prediccion_Inflacion_Madrid\src\main.py", line 400, in step_1_data_extraction
+    exported_files = extractor.export_all_data(start_date, end_date)
+  File "c:\Users\meryg\Desktop\ICAI IMAT\4º\Economía y Empresa\Extra\Analisis_Inflacion\Prediccion_Inflacion_Madrid\src\ine_extractor.py", line 655, in export_all_data
+    self.save_to_csv(ipc_general, filename_general, "general")
+  File "c:\Users\meryg\Desktop\ICAI IMAT\4º\Economía y Empresa\Extra\Analisis_Inflacion\Prediccion_Inflacion_Madrid\src\ine_extractor.py", line 513, in save_to_csv
+    raise ValueError(f"Data validation failed for {data_type} export")
+ValueError: Data validation failed for general export
+
+2025-10-27 16:51:15,946 - InflationPipeline - ERROR - Critical step 'data_extraction' failed. Stopping pipeline.
+2025-10-27 16:51:15,946 - InflationPipeline - ERROR - ✗ Step 1: Data Extraction failed: Data validation failed for general export
+2025-10-27 16:51:15,946 - InflationPipeline - ERROR - Error in step 'data_extraction': Data validation failed for general export
+2025-10-27 16:51:15,947 - InflationPipeline - ERROR - Traceback: Traceback (most recent call last):
+  File "c:\Users\meryg\Desktop\ICAI IMAT\4º\Economía y Empresa\Extra\Analisis_Inflacion\Prediccion_Inflacion_Madrid\src\main.py", line 901, in run_pipeline
+    step_result = step_function()
+  File "c:\Users\meryg\Desktop\ICAI IMAT\4º\Economía y Empresa\Extra\Analisis_Inflacion\Prediccion_Inflacion_Madrid\src\main.py", line 400, in step_1_data_extraction
+    exported_files = extractor.export_all_data(start_date, end_date)
+  File "c:\Users\meryg\Desktop\ICAI IMAT\4º\Economía y Empresa\Extra\Analisis_Inflacion\Prediccion_Inflacion_Madrid\src\ine_extractor.py", line 655, in export_all_data
+    self.save_to_csv(ipc_general, filename_general, "general")
+  File "c:\Users\meryg\Desktop\ICAI IMAT\4º\Economía y Empresa\Extra\Analisis_Inflacion\Prediccion_Inflacion_Madrid\src\ine_extractor.py", line 513, in save_to_csv
+    raise ValueError(f"Data validation failed for {data_type} export")
+ValueError: Data validation failed for general export
+
+2025-10-27 16:51:15,947 - InflationPipeline - ERROR - Critical step 'data_extraction' failed. Stopping pipeline.
+2025-10-27 16:51:15,952 - InflationPipeline - INFO - 
+================================================================================
+2025-10-27 16:51:15,953 - InflationPipeline - INFO - PIPELINE EXECUTION SUMMARY
+2025-10-27 16:51:15,953 - InflationPipeline - INFO - ================================================================================
+2025-10-27 16:51:15,953 - InflationPipeline - INFO - Status: FAILED
+2025-10-27 16:51:15,953 - InflationPipeline - INFO - Duration: 8.08 seconds
+2025-10-27 16:51:15,953 - InflationPipeline - INFO - Completed Steps: 0
+2025-10-27 16:51:15,954 - InflationPipeline - INFO - Failed Steps: 2
+2025-10-27 16:51:15,954 - InflationPipeline - INFO - 
+Failed Steps:
+2025-10-27 16:51:15,954 - InflationPipeline - INFO -   ✗ data_extraction
+2025-10-27 16:51:15,954 - InflationPipeline - INFO -   ✗ data_extraction
+2025-10-27 16:51:15,954 - InflationPipeline - INFO - 
+Performance Summary:
+2025-10-27 16:51:15,954 - InflationPipeline - INFO -   Total Execution Time: 0.00 seconds
+2025-10-27 16:51:15,955 - InflationPipeline - INFO -   Peak Memory Usage: 0.0 MB
+2025-10-27 16:51:15,955 - InflationPipeline - INFO -   Total Memory Freed: 0.0 MB
+2025-10-27 16:51:15,955 - InflationPipeline - INFO -   Average System Memory Usage: 56.9%
+2025-10-27 16:51:15,956 - InflationPipeline - INFO -   Average System CPU Usage: 4.0%
+2025-10-27 16:51:15,956 - InflationPipeline - INFO -   Peak Process Memory: 198.3 MB
+2025-10-27 16:51:15,956 - InflationPipeline - INFO - 
+Generated Outputs:
+2025-10-27 16:51:15,957 - InflationPipeline - INFO - Pipeline state saved to: reports\pipeline_execution_state.json
+2025-10-27 16:51:15,958 - InflationPipeline - INFO - ================================================================================
+2025-10-27 16:54:08,966 - InflationPipeline - INFO - ================================================================================
+2025-10-27 16:54:08,967 - InflationPipeline - INFO - STARTING SPANISH INFLATION PREDICTION PIPELINE
+2025-10-27 16:54:08,967 - InflationPipeline - INFO - ================================================================================
+2025-10-27 16:54:08,968 - InflationPipeline - INFO - System Info: 16 CPUs, 31.3GB total memory, 13.7GB available
+2025-10-27 16:54:08,968 - InflationPipeline - INFO - Estimated pipeline duration: 2.1 minutes
+2025-10-27 16:54:08,968 - InflationPipeline - INFO - Validating configuration...
+2025-10-27 16:54:08,969 - InflationPipeline - INFO - Configuration validation completed successfully
+2025-10-27 16:54:08,969 - InflationPipeline - INFO - Initializing pipeline modules...
+2025-10-27 16:54:08,987 - InflationPipeline - INFO - All modules initialized successfully
+2025-10-27 16:54:08,988 - InflationPipeline - INFO - 
+------------------------------------------------------------
+2025-10-27 16:54:08,988 - InflationPipeline - INFO - EXECUTING: Step 1: Data Extraction
+2025-10-27 16:54:08,988 - InflationPipeline - INFO - ------------------------------------------------------------
+2025-10-27 16:54:08,988 - InflationPipeline - INFO - Starting data_extraction...
+2025-10-27 16:54:08,988 - InflationPipeline - INFO - Testing INE API connections...
+2025-10-27 16:54:11,455 - InflationPipeline - INFO - Downloading INE data from 2002-01-01 to 2024-12-31...
+2025-10-27 16:54:12,686 - InflationPipeline - ERROR - Error in step 'data_extraction': Data validation failed for general export
+2025-10-27 16:54:12,687 - InflationPipeline - ERROR - Traceback: Traceback (most recent call last):
+  File "c:\Users\meryg\Desktop\ICAI IMAT\4º\Economía y Empresa\Extra\Analisis_Inflacion\Prediccion_Inflacion_Madrid\src\main.py", line 400, in step_1_data_extraction
+    exported_files = extractor.export_all_data(start_date, end_date)
+  File "c:\Users\meryg\Desktop\ICAI IMAT\4º\Economía y Empresa\Extra\Analisis_Inflacion\Prediccion_Inflacion_Madrid\src\ine_extractor.py", line 704, in export_all_data
+    self.save_to_csv(ipc_general, filename_general, "general")
+  File "c:\Users\meryg\Desktop\ICAI IMAT\4º\Economía y Empresa\Extra\Analisis_Inflacion\Prediccion_Inflacion_Madrid\src\ine_extractor.py", line 562, in save_to_csv
+    raise ValueError(f"Data validation failed for {data_type} export")
+ValueError: Data validation failed for general export
+
+2025-10-27 16:54:12,688 - InflationPipeline - ERROR - Critical step 'data_extraction' failed. Stopping pipeline.
+2025-10-27 16:54:12,688 - InflationPipeline - ERROR - ✗ Step 1: Data Extraction failed: Data validation failed for general export
+2025-10-27 16:54:12,688 - InflationPipeline - ERROR - Error in step 'data_extraction': Data validation failed for general export
+2025-10-27 16:54:12,688 - InflationPipeline - ERROR - Traceback: Traceback (most recent call last):
+  File "c:\Users\meryg\Desktop\ICAI IMAT\4º\Economía y Empresa\Extra\Analisis_Inflacion\Prediccion_Inflacion_Madrid\src\main.py", line 901, in run_pipeline
+    step_result = step_function()
+  File "c:\Users\meryg\Desktop\ICAI IMAT\4º\Economía y Empresa\Extra\Analisis_Inflacion\Prediccion_Inflacion_Madrid\src\main.py", line 400, in step_1_data_extraction
+    exported_files = extractor.export_all_data(start_date, end_date)
+  File "c:\Users\meryg\Desktop\ICAI IMAT\4º\Economía y Empresa\Extra\Analisis_Inflacion\Prediccion_Inflacion_Madrid\src\ine_extractor.py", line 704, in export_all_data
+    self.save_to_csv(ipc_general, filename_general, "general")
+  File "c:\Users\meryg\Desktop\ICAI IMAT\4º\Economía y Empresa\Extra\Analisis_Inflacion\Prediccion_Inflacion_Madrid\src\ine_extractor.py", line 562, in save_to_csv
+    raise ValueError(f"Data validation failed for {data_type} export")
+ValueError: Data validation failed for general export
+
+2025-10-27 16:54:12,689 - InflationPipeline - ERROR - Critical step 'data_extraction' failed. Stopping pipeline.
+2025-10-27 16:54:12,693 - InflationPipeline - INFO - 
+================================================================================
+2025-10-27 16:54:12,693 - InflationPipeline - INFO - PIPELINE EXECUTION SUMMARY
+2025-10-27 16:54:12,693 - InflationPipeline - INFO - ================================================================================
+2025-10-27 16:54:12,693 - InflationPipeline - INFO - Status: FAILED
+2025-10-27 16:54:12,694 - InflationPipeline - INFO - Duration: 3.73 seconds
+2025-10-27 16:54:12,694 - InflationPipeline - INFO - Completed Steps: 0
+2025-10-27 16:54:12,694 - InflationPipeline - INFO - Failed Steps: 2
+2025-10-27 16:54:12,695 - InflationPipeline - INFO - 
+Failed Steps:
+2025-10-27 16:54:12,695 - InflationPipeline - INFO -   ✗ data_extraction
+2025-10-27 16:54:12,695 - InflationPipeline - INFO -   ✗ data_extraction
+2025-10-27 16:54:12,695 - InflationPipeline - INFO - 
+Performance Summary:
+2025-10-27 16:54:12,695 - InflationPipeline - INFO -   Total Execution Time: 0.00 seconds
+2025-10-27 16:54:12,696 - InflationPipeline - INFO -   Peak Memory Usage: 0.0 MB
+2025-10-27 16:54:12,696 - InflationPipeline - INFO -   Total Memory Freed: 0.0 MB
+2025-10-27 16:54:12,696 - InflationPipeline - INFO -   Average System Memory Usage: 56.4%
+2025-10-27 16:54:12,696 - InflationPipeline - INFO -   Average System CPU Usage: 4.0%
+2025-10-27 16:54:12,696 - InflationPipeline - INFO -   Peak Process Memory: 198.5 MB
+2025-10-27 16:54:12,696 - InflationPipeline - INFO - 
+Generated Outputs:
+2025-10-27 16:54:12,698 - InflationPipeline - INFO - Pipeline state saved to: reports\pipeline_execution_state.json
+2025-10-27 16:54:12,699 - InflationPipeline - INFO - ================================================================================
+2025-10-27 16:55:33,007 - InflationPipeline - INFO - ================================================================================
+2025-10-27 16:55:33,007 - InflationPipeline - INFO - STARTING SPANISH INFLATION PREDICTION PIPELINE
+2025-10-27 16:55:33,007 - InflationPipeline - INFO - ================================================================================
+2025-10-27 16:55:33,008 - InflationPipeline - INFO - System Info: 16 CPUs, 31.3GB total memory, 13.3GB available
+2025-10-27 16:55:33,009 - InflationPipeline - INFO - Estimated pipeline duration: 2.1 minutes
+2025-10-27 16:55:33,009 - InflationPipeline - INFO - Validating configuration...
+2025-10-27 16:55:33,010 - InflationPipeline - INFO - Configuration validation completed successfully
+2025-10-27 16:55:33,010 - InflationPipeline - INFO - Initializing pipeline modules...
+2025-10-27 16:55:33,027 - InflationPipeline - INFO - All modules initialized successfully
+2025-10-27 16:55:33,027 - InflationPipeline - INFO - 
+------------------------------------------------------------
+2025-10-27 16:55:33,027 - InflationPipeline - INFO - EXECUTING: Step 1: Data Extraction
+2025-10-27 16:55:33,027 - InflationPipeline - INFO - ------------------------------------------------------------
+2025-10-27 16:55:33,027 - InflationPipeline - INFO - Starting data_extraction...
+2025-10-27 16:55:33,027 - InflationPipeline - INFO - Testing INE API connections...
+2025-10-27 16:55:36,438 - InflationPipeline - INFO - Downloading INE data from 2002-01-01 to 2024-12-31...
+2025-10-27 16:55:37,266 - InflationPipeline - ERROR - Error in step 'data_extraction': Data validation failed for general export
+2025-10-27 16:55:37,267 - InflationPipeline - ERROR - Traceback: Traceback (most recent call last):
+  File "c:\Users\meryg\Desktop\ICAI IMAT\4º\Economía y Empresa\Extra\Analisis_Inflacion\Prediccion_Inflacion_Madrid\src\main.py", line 400, in step_1_data_extraction
+    exported_files = extractor.export_all_data(start_date, end_date)
+  File "c:\Users\meryg\Desktop\ICAI IMAT\4º\Economía y Empresa\Extra\Analisis_Inflacion\Prediccion_Inflacion_Madrid\src\ine_extractor.py", line 704, in export_all_data
+    self.save_to_csv(ipc_general, filename_general, "general")
+  File "c:\Users\meryg\Desktop\ICAI IMAT\4º\Economía y Empresa\Extra\Analisis_Inflacion\Prediccion_Inflacion_Madrid\src\ine_extractor.py", line 562, in save_to_csv
+    raise ValueError(f"Data validation failed for {data_type} export")
+ValueError: Data validation failed for general export
+
+2025-10-27 16:55:37,267 - InflationPipeline - ERROR - Critical step 'data_extraction' failed. Stopping pipeline.
+2025-10-27 16:55:37,267 - InflationPipeline - ERROR - ✗ Step 1: Data Extraction failed: Data validation failed for general export
+2025-10-27 16:55:37,267 - InflationPipeline - ERROR - Error in step 'data_extraction': Data validation failed for general export
+2025-10-27 16:55:37,268 - InflationPipeline - ERROR - Traceback: Traceback (most recent call last):
+  File "c:\Users\meryg\Desktop\ICAI IMAT\4º\Economía y Empresa\Extra\Analisis_Inflacion\Prediccion_Inflacion_Madrid\src\main.py", line 901, in run_pipeline
+    step_result = step_function()
+  File "c:\Users\meryg\Desktop\ICAI IMAT\4º\Economía y Empresa\Extra\Analisis_Inflacion\Prediccion_Inflacion_Madrid\src\main.py", line 400, in step_1_data_extraction
+    exported_files = extractor.export_all_data(start_date, end_date)
+  File "c:\Users\meryg\Desktop\ICAI IMAT\4º\Economía y Empresa\Extra\Analisis_Inflacion\Prediccion_Inflacion_Madrid\src\ine_extractor.py", line 704, in export_all_data
+    self.save_to_csv(ipc_general, filename_general, "general")
+  File "c:\Users\meryg\Desktop\ICAI IMAT\4º\Economía y Empresa\Extra\Analisis_Inflacion\Prediccion_Inflacion_Madrid\src\ine_extractor.py", line 562, in save_to_csv
+    raise ValueError(f"Data validation failed for {data_type} export")
+ValueError: Data validation failed for general export
+
+2025-10-27 16:55:37,268 - InflationPipeline - ERROR - Critical step 'data_extraction' failed. Stopping pipeline.
+2025-10-27 16:55:37,269 - InflationPipeline - INFO - 
+================================================================================
+2025-10-27 16:55:37,270 - InflationPipeline - INFO - PIPELINE EXECUTION SUMMARY
+2025-10-27 16:55:37,270 - InflationPipeline - INFO - ================================================================================
+2025-10-27 16:55:37,270 - InflationPipeline - INFO - Status: FAILED
+2025-10-27 16:55:37,270 - InflationPipeline - INFO - Duration: 4.26 seconds
+2025-10-27 16:55:37,270 - InflationPipeline - INFO - Completed Steps: 0
+2025-10-27 16:55:37,270 - InflationPipeline - INFO - Failed Steps: 2
+2025-10-27 16:55:37,270 - InflationPipeline - INFO - 
+Failed Steps:
+2025-10-27 16:55:37,270 - InflationPipeline - INFO -   ✗ data_extraction
+2025-10-27 16:55:37,270 - InflationPipeline - INFO -   ✗ data_extraction
+2025-10-27 16:55:37,270 - InflationPipeline - INFO - 
+Performance Summary:
+2025-10-27 16:55:37,270 - InflationPipeline - INFO -   Total Execution Time: 0.00 seconds
+2025-10-27 16:55:37,270 - InflationPipeline - INFO -   Peak Memory Usage: 0.0 MB
+2025-10-27 16:55:37,272 - InflationPipeline - INFO -   Total Memory Freed: 0.0 MB
+2025-10-27 16:55:37,272 - InflationPipeline - INFO -   Average System Memory Usage: 57.3%
+2025-10-27 16:55:37,272 - InflationPipeline - INFO -   Average System CPU Usage: 18.4%
+2025-10-27 16:55:37,272 - InflationPipeline - INFO -   Peak Process Memory: 176.7 MB
+2025-10-27 16:55:37,272 - InflationPipeline - INFO - 
+Generated Outputs:
+2025-10-27 16:55:37,272 - InflationPipeline - INFO - Pipeline state saved to: reports\pipeline_execution_state.json
+2025-10-27 16:55:37,272 - InflationPipeline - INFO - ================================================================================
+2025-10-27 17:19:09,094 - InflationPipeline - INFO - ================================================================================
+2025-10-27 17:19:09,094 - InflationPipeline - INFO - STARTING SPANISH INFLATION PREDICTION PIPELINE
+2025-10-27 17:19:09,094 - InflationPipeline - INFO - ================================================================================
+2025-10-27 17:19:09,096 - InflationPipeline - INFO - System Info: 16 CPUs, 31.3GB total memory, 13.1GB available
+2025-10-27 17:19:09,096 - InflationPipeline - INFO - Estimated pipeline duration: 2.1 minutes
+2025-10-27 17:19:09,096 - InflationPipeline - INFO - Validating configuration...
+2025-10-27 17:19:09,097 - InflationPipeline - INFO - Configuration validation completed successfully
+2025-10-27 17:19:09,097 - InflationPipeline - INFO - Initializing pipeline modules...
+2025-10-27 17:19:09,116 - InflationPipeline - INFO - All modules initialized successfully
+2025-10-27 17:19:09,116 - InflationPipeline - INFO - 
+------------------------------------------------------------
+2025-10-27 17:19:09,116 - InflationPipeline - INFO - EXECUTING: Step 1: Data Extraction
+2025-10-27 17:19:09,116 - InflationPipeline - INFO - ------------------------------------------------------------
+2025-10-27 17:19:09,116 - InflationPipeline - INFO - Starting data_extraction...
+2025-10-27 17:19:09,116 - InflationPipeline - INFO - Testing INE API connections...
+2025-10-27 17:19:12,181 - InflationPipeline - INFO - Downloading INE data from 2002-01-01 to 2024-12-31...
+2025-10-27 17:19:18,772 - InflationPipeline - INFO - Step 'data_extraction' completed in 9.61s, Memory: 185.5MB, CPU: 0.0%, System Memory: 58.2%
+2025-10-27 17:19:18,773 - InflationPipeline - INFO - Data extraction completed successfully
+2025-10-27 17:19:18,773 - InflationPipeline - INFO - ✓ Step 1: Data Extraction completed successfully
+2025-10-27 17:19:18,773 - InflationPipeline - INFO - 
+------------------------------------------------------------
+2025-10-27 17:19:18,773 - InflationPipeline - INFO - EXECUTING: Step 2: Data Processing
+2025-10-27 17:19:18,773 - InflationPipeline - INFO - ------------------------------------------------------------
+2025-10-27 17:19:18,773 - InflationPipeline - INFO - Progress: 16.7% (1/6 steps), Elapsed: 10s, Estimated remaining: 48s
+2025-10-27 17:19:18,773 - InflationPipeline - INFO - Starting data_processing...
+2025-10-27 17:19:18,773 - InflationPipeline - INFO - Processing ipc_general data from data/raw/ipc_general_2002-01-01_2024-12-31.csv
+2025-10-27 17:19:18,808 - InflationPipeline - INFO - Processing ipc_groups data from data/raw/ipc_groups_2002-01-01_2024-12-31.csv
+2025-10-27 17:19:18,826 - InflationPipeline - INFO - Processing ipca data from data/raw/ipca_2002-01-01_2024-12-31.csv
+2025-10-27 17:19:18,889 - InflationPipeline - INFO - Step 'data_processing' completed in 0.07s, Memory: 187.0MB, CPU: 0.0%, System Memory: 58.1%
+2025-10-27 17:19:18,890 - InflationPipeline - INFO - Data processing completed successfully
+2025-10-27 17:19:18,890 - InflationPipeline - INFO - ✓ Step 2: Data Processing completed successfully
+2025-10-27 17:19:18,890 - InflationPipeline - INFO - 
+------------------------------------------------------------
+2025-10-27 17:19:18,890 - InflationPipeline - INFO - EXECUTING: Step 3: Feature Engineering
+2025-10-27 17:19:18,890 - InflationPipeline - INFO - ------------------------------------------------------------
+2025-10-27 17:19:18,890 - InflationPipeline - INFO - Progress: 33.3% (2/6 steps), Elapsed: 10s, Estimated remaining: 20s
+2025-10-27 17:19:18,891 - InflationPipeline - INFO - Starting feature_engineering...
+2025-10-27 17:19:18,891 - InflationPipeline - INFO - Creating lag features...
+2025-10-27 17:19:18,896 - InflationPipeline - INFO - Creating rolling features...
+2025-10-27 17:19:18,966 - InflationPipeline - INFO - Creating seasonal features...
+2025-10-27 17:19:18,978 - InflationPipeline - INFO - Creating economic indicators...
+2025-10-27 17:20:04,224 - InflationPipeline - INFO - Step 'feature_engineering' completed in 45.27s, Memory: 209.7MB, CPU: 0.0%, System Memory: 56.5%
+2025-10-27 17:20:04,224 - InflationPipeline - INFO - Feature engineering completed successfully
+2025-10-27 17:20:04,225 - InflationPipeline - INFO - ✓ Step 3: Feature Engineering completed successfully
+2025-10-27 17:20:04,225 - InflationPipeline - INFO - 
+------------------------------------------------------------
+2025-10-27 17:20:04,225 - InflationPipeline - INFO - EXECUTING: Step 4: Model Training
+2025-10-27 17:20:04,226 - InflationPipeline - INFO - ------------------------------------------------------------
+2025-10-27 17:20:04,226 - InflationPipeline - INFO - Progress: 50.0% (3/6 steps), Elapsed: 55s, Estimated remaining: 55s
+2025-10-27 17:20:04,226 - InflationPipeline - INFO - Starting model_training...
+2025-10-27 17:20:04,226 - InflationPipeline - INFO - Training ARIMA model...
+2025-10-27 17:20:12,672 - InflationPipeline - INFO - Training Random Forest model...
+2025-10-27 17:20:13,196 - InflationPipeline - WARNING - Random Forest training failed: Cannot cast DatetimeArray to dtype float64
+2025-10-27 17:20:13,197 - InflationPipeline - INFO - Training LSTM model...
+2025-10-27 17:20:13,197 - InflationPipeline - WARNING - LSTM training failed: TensorFlow is required for LSTM. Install with: pip install tensorflow
+2025-10-27 17:20:13,197 - InflationPipeline - INFO - Evaluating models...
+2025-10-27 17:20:13,197 - InflationPipeline - INFO - Saving trained models...
+2025-10-27 17:20:13,276 - InflationPipeline - INFO - Step 'model_training' completed in 8.98s, Memory: 255.2MB, CPU: 0.0%, System Memory: 56.9%
+2025-10-27 17:20:13,277 - InflationPipeline - INFO - Model training completed successfully
+2025-10-27 17:20:13,280 - InflationPipeline - INFO - ✓ Step 4: Model Training completed successfully
+2025-10-27 17:20:13,280 - InflationPipeline - INFO - 
+------------------------------------------------------------
+2025-10-27 17:20:13,280 - InflationPipeline - INFO - EXECUTING: Step 5: Prediction Generation
+2025-10-27 17:20:13,280 - InflationPipeline - INFO - ------------------------------------------------------------
+2025-10-27 17:20:13,281 - InflationPipeline - INFO - Progress: 66.7% (4/6 steps), Elapsed: 64s, Estimated remaining: 32s
+2025-10-27 17:20:13,281 - InflationPipeline - INFO - Starting prediction_generation...
+2025-10-27 17:20:13,281 - InflationPipeline - INFO - Loading model: arima
+2025-10-27 17:20:13,286 - InflationPipeline - INFO - Generating 12-month predictions...
+2025-10-27 17:20:13,294 - InflationPipeline - ERROR - Error in step 'prediction_generation': 'NoneType' object is not subscriptable
+2025-10-27 17:20:13,296 - InflationPipeline - ERROR - Traceback: Traceback (most recent call last):
+  File "C:\Users\meryg\Desktop\ICAI IMAT\4º\Economía y Empresa\Extra\Analisis_Inflacion\Prediccion_Inflacion_Madrid\src\main.py", line 674, in step_5_prediction_generation
+    predictions = predictor.generate_predictions(horizon)
+  File "C:\Users\meryg\Desktop\ICAI IMAT\4º\Economía y Empresa\Extra\Analisis_Inflacion\Prediccion_Inflacion_Madrid\src\predictor.py", line 217, in generate_predictions
+    predictions_df = self._generate_arima_predictions(horizon)
+  File "C:\Users\meryg\Desktop\ICAI IMAT\4º\Economía y Empresa\Extra\Analisis_Inflacion\Prediccion_Inflacion_Madrid\src\predictor.py", line 252, in _generate_arima_predictions
+    last_date = self.loaded_model.data.dates[-1] if hasattr(self.loaded_model.data, 'dates') else None
+TypeError: 'NoneType' object is not subscriptable
+
+2025-10-27 17:20:13,296 - InflationPipeline - WARNING - Non-critical step 'prediction_generation' failed. Continuing pipeline.
+2025-10-27 17:20:13,296 - InflationPipeline - ERROR - ✗ Step 5: Prediction Generation failed: 'NoneType' object is not subscriptable
+2025-10-27 17:20:13,296 - InflationPipeline - ERROR - Error in step 'prediction_generation': 'NoneType' object is not subscriptable
+2025-10-27 17:20:13,297 - InflationPipeline - ERROR - Traceback: Traceback (most recent call last):
+  File "C:\Users\meryg\Desktop\ICAI IMAT\4º\Economía y Empresa\Extra\Analisis_Inflacion\Prediccion_Inflacion_Madrid\src\main.py", line 901, in run_pipeline
+    step_result = step_function()
+  File "C:\Users\meryg\Desktop\ICAI IMAT\4º\Economía y Empresa\Extra\Analisis_Inflacion\Prediccion_Inflacion_Madrid\src\main.py", line 674, in step_5_prediction_generation
+    predictions = predictor.generate_predictions(horizon)
+  File "C:\Users\meryg\Desktop\ICAI IMAT\4º\Economía y Empresa\Extra\Analisis_Inflacion\Prediccion_Inflacion_Madrid\src\predictor.py", line 217, in generate_predictions
+    predictions_df = self._generate_arima_predictions(horizon)
+  File "C:\Users\meryg\Desktop\ICAI IMAT\4º\Economía y Empresa\Extra\Analisis_Inflacion\Prediccion_Inflacion_Madrid\src\predictor.py", line 252, in _generate_arima_predictions
+    last_date = self.loaded_model.data.dates[-1] if hasattr(self.loaded_model.data, 'dates') else None
+TypeError: 'NoneType' object is not subscriptable
+
+2025-10-27 17:20:13,297 - InflationPipeline - WARNING - Non-critical step 'prediction_generation' failed. Continuing pipeline.
+2025-10-27 17:20:13,297 - InflationPipeline - INFO - 
+------------------------------------------------------------
+2025-10-27 17:20:13,297 - InflationPipeline - INFO - EXECUTING: Step 6: Report Generation
+2025-10-27 17:20:13,297 - InflationPipeline - INFO - ------------------------------------------------------------
+2025-10-27 17:20:13,298 - InflationPipeline - INFO - Progress: 83.3% (5/6 steps), Elapsed: 64s, Estimated remaining: 13s
+2025-10-27 17:20:13,298 - InflationPipeline - INFO - Starting report_generation...
+2025-10-27 17:20:13,298 - InflationPipeline - ERROR - Error in step 'report_generation': Missing required data for report generation
+2025-10-27 17:20:13,298 - InflationPipeline - ERROR - Traceback: Traceback (most recent call last):
+  File "C:\Users\meryg\Desktop\ICAI IMAT\4º\Economía y Empresa\Extra\Analisis_Inflacion\Prediccion_Inflacion_Madrid\src\main.py", line 747, in step_6_report_generation
+    raise Exception("Missing required data for report generation")
+Exception: Missing required data for report generation
+
+2025-10-27 17:20:13,299 - InflationPipeline - WARNING - Non-critical step 'report_generation' failed. Continuing pipeline.
+2025-10-27 17:20:13,300 - InflationPipeline - ERROR - ✗ Step 6: Report Generation failed: Missing required data for report generation
+2025-10-27 17:20:13,301 - InflationPipeline - ERROR - Error in step 'report_generation': Missing required data for report generation
+2025-10-27 17:20:13,301 - InflationPipeline - ERROR - Traceback: Traceback (most recent call last):
+  File "C:\Users\meryg\Desktop\ICAI IMAT\4º\Economía y Empresa\Extra\Analisis_Inflacion\Prediccion_Inflacion_Madrid\src\main.py", line 901, in run_pipeline
+    step_result = step_function()
+  File "C:\Users\meryg\Desktop\ICAI IMAT\4º\Economía y Empresa\Extra\Analisis_Inflacion\Prediccion_Inflacion_Madrid\src\main.py", line 747, in step_6_report_generation
+    raise Exception("Missing required data for report generation")
+Exception: Missing required data for report generation
+
+2025-10-27 17:20:13,301 - InflationPipeline - WARNING - Non-critical step 'report_generation' failed. Continuing pipeline.
+2025-10-27 17:20:13,301 - InflationPipeline - INFO - Progress: 66.7% (4/6 steps), Elapsed: 64s, Estimated remaining: 32s
+2025-10-27 17:20:13,302 - InflationPipeline - INFO - 
+================================================================================
+2025-10-27 17:20:13,302 - InflationPipeline - INFO - PIPELINE EXECUTION SUMMARY
+2025-10-27 17:20:13,302 - InflationPipeline - INFO - ================================================================================
+2025-10-27 17:20:13,302 - InflationPipeline - INFO - Status: PARTIAL_SUCCESS
+2025-10-27 17:20:13,302 - InflationPipeline - INFO - Duration: 64.21 seconds
+2025-10-27 17:20:13,302 - InflationPipeline - INFO - Completed Steps: 4
+2025-10-27 17:20:13,302 - InflationPipeline - INFO - Failed Steps: 4
+2025-10-27 17:20:13,303 - InflationPipeline - INFO - 
+Completed Steps:
+2025-10-27 17:20:13,303 - InflationPipeline - INFO -   ✓ data_extraction (9.61s, 185.5MB)
+2025-10-27 17:20:13,303 - InflationPipeline - INFO -   ✓ data_processing (0.07s, 187.0MB)
+2025-10-27 17:20:13,303 - InflationPipeline - INFO -   ✓ feature_engineering (45.27s, 209.7MB)
+2025-10-27 17:20:13,303 - InflationPipeline - INFO -   ✓ model_training (8.98s, 255.2MB)
+2025-10-27 17:20:13,303 - InflationPipeline - INFO - 
+Failed Steps:
+2025-10-27 17:20:13,303 - InflationPipeline - INFO -   ✗ prediction_generation
+2025-10-27 17:20:13,304 - InflationPipeline - INFO -   ✗ prediction_generation
+2025-10-27 17:20:13,304 - InflationPipeline - INFO -   ✗ report_generation
+2025-10-27 17:20:13,304 - InflationPipeline - INFO -   ✗ report_generation
+2025-10-27 17:20:13,304 - InflationPipeline - INFO - 
+Performance Summary:
+2025-10-27 17:20:13,304 - InflationPipeline - INFO -   Total Execution Time: 63.94 seconds
+2025-10-27 17:20:13,304 - InflationPipeline - INFO -   Peak Memory Usage: 255.2 MB
+2025-10-27 17:20:13,305 - InflationPipeline - INFO -   Total Memory Freed: 1.0 MB
+2025-10-27 17:20:13,305 - InflationPipeline - INFO -   Average System Memory Usage: 57.1%
+2025-10-27 17:20:13,305 - InflationPipeline - INFO -   Average System CPU Usage: 16.2%
+2025-10-27 17:20:13,305 - InflationPipeline - INFO -   Peak Process Memory: 211.8 MB
+2025-10-27 17:20:13,305 - InflationPipeline - INFO - 
+Generated Outputs:
+2025-10-27 17:20:13,365 - InflationPipeline - INFO - Pipeline state saved to: reports\pipeline_execution_state.json
+2025-10-27 17:20:13,366 - InflationPipeline - INFO - ================================================================================

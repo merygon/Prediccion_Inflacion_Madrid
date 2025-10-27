@@ -1,0 +1,41 @@
+{
+  "timestamp": "2025-10-25T20:13:49.856178",
+  "historical_analysis": {
+    "statistics": {
+      "mean": 1.6920539563433519,
+      "median": 1.6487822512456125,
+      "std": 1.3694367448591585,
+      "min": -0.9395051858196632,
+      "max": 4.778417276763406,
+      "count": 48
+    }
+  },
+  "prediction_analysis": {
+    "statistics": {
+      "mean": 1.838332827518889,
+      "median": 2.0621389603193436,
+      "std": 0.6562961769284398,
+      "min": 0.3895678757098129,
+      "max": 2.6247996179967608,
+      "count": 12
+    }
+  },
+  "economic_interpretation": {
+    "inflation_regime": {
+      "historical_regime": "moderada",
+      "predicted_regime": "moderada"
+    },
+    "economic_outlook": {
+      "outlook": "estable",
+      "risk_level": "bajo"
+    }
+  },
+  "conclusions": [
+    "La inflación histórica promedio fue de 1.69%",
+    "Las predicciones indican una inflación promedio de 1.84%"
+  ],
+  "recommendations": [
+    "Monitorear la evolución de los precios",
+    "Mantener política monetaria estable"
+  ]
+}

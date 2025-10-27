@@ -1,0 +1,1164 @@
+================================================================================
+DOCUMENTACIÓN DE CÓDIGO: model_trainer.py
+================================================================================
+Fecha de generación: 25/10/2025 20:13:49
+Número de líneas: 1151
+
+CONTENIDO DEL ARCHIVO:
+----------------------------------------
+
+   1: """
+   2: Machine learning model trainer for inflation prediction system.
+   3: Implements ARIMA, Random Forest, and LSTM models with evaluation and selection.
+   4: """
+   5: 
+   6: import pandas as pd
+   7: import numpy as np
+   8: from typing import List, Dict, Any, Optional, Tuple, Union
+   9: import logging
+  10: from pathlib import Path
+  11: import yaml
+  12: import pickle
+  13: import warnings
+  14: warnings.filterwarnings('ignore')
+  15: 
+  16: # Statistical and ML imports
+  17: try:
+  18:     from statsmodels.tsa.arima.model import ARIMA
+  19:     from statsmodels.tsa.stattools import adfuller
+  20:     from statsmodels.tsa.seasonal import seasonal_decompose
+  21:     from statsmodels.stats.diagnostic import acorr_ljungbox
+  22:     from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
+  23:     _STATSMODELS_AVAILABLE = True
+  24: except ImportError:
+  25:     _STATSMODELS_AVAILABLE = False
+  26: 
+  27: try:
+  28:     from sklearn.ensemble import RandomForestRegressor
+  29:     from sklearn.model_selection import GridSearchCV, TimeSeriesSplit
+  30:     from sklearn.metrics import mean_absolute_error, mean_squared_error
+  31:     from sklearn.preprocessing import StandardScaler
+  32:     _SKLEARN_AVAILABLE = True
+  33: except ImportError:
+  34:     _SKLEARN_AVAILABLE = False
+  35: 
+  36: try:
+  37:     import tensorflow as tf
+  38:     from tensorflow.keras.models import Sequential
+  39:     from tensorflow.keras.layers import LSTM, Dense, Dropout
+  40:     from tensorflow.keras.optimizers import Adam
+  41:     from tensorflow.keras.callbacks import EarlyStopping
+  42:     _TENSORFLOW_AVAILABLE = True
+  43: except ImportError:
+  44:     _TENSORFLOW_AVAILABLE = False
+  45:     # Create dummy classes for type hints when TensorFlow is not available
+  46:     class Sequential:
+  47:         pass
+  48: 
+  49: class ModelTrainer:
+  50:     """
+  51:     Handles training and evaluation of machine learning models for inflation prediction.
+  52:     
+  53:     This class implements ARIMA, Random Forest, and LSTM models with automatic
+  54:     parameter selection, validation, and performance evaluation.
+  55:     """
+  56:     
+  57:     def __init__(self, config_path: str = "config/config.yaml"):
+  58:         """
+  59:         Initialize the ModelTrainer with configuration.
+  60:         
+  61:         Args:
+  62:             config_path (str): Path to configuration file
+  63:         """
+  64:         self.logger = logging.getLogger(__name__)
+  65:         self.config = self._load_config(config_path)
+  66:         
+  67:         # Model parameters from config
+  68:         self.arima_params = self.config.get('models', {}).get('arima', {})
+  69:         self.rf_params = self.config.get('models', {}).get('random_forest', {})
+  70:         self.lstm_params = self.config.get('models', {}).get('lstm', {})
+  71:         
+  72:         # Evaluation parameters
+  73:         self.eval_params = self.config.get('evaluation', {})
+  74:         self.test_size = self.eval_params.get('test_size', 0.2)
+  75:         self.validation_size = self.eval_params.get('validation_size', 0.2)
+  76:         
+  77:         # Trained models storage
+  78:         self.trained_models = {}
+  79:         self.model_scores = {}
+  80:         
+  81:     def _load_config(self, config_path: str) -> Dict[str, Any]:
+  82:         """
+  83:         Load configuration from YAML file.
+  84:         
+  85:         Args:
+  86:             config_path (str): Path to configuration file
+  87:             
+  88:         Returns:
+  89:             Dict[str, Any]: Configuration dictionary
+  90:         """
+  91:         try:
+  92:             with open(config_path, 'r', encoding='utf-8') as file:
+  93:                 config = yaml.safe_load(file)
+  94:                 self.logger.info(f"Loaded configuration from {config_path}")
+  95:                 return config
+  96:         except FileNotFoundError:
+  97:             self.logger.warning(f"Config file not found: {config_path}. Using default parameters.")
+  98:             return {}
+  99:         except Exception as e:
+ 100:             self.logger.error(f"Error loading config: {e}. Using default parameters.")
+ 101:             return {}
+ 102:     
+ 103:     def train_arima(self, data: pd.DataFrame, target_column: str = None) -> Dict[str, Any]:
+ 104:         """
+ 105:         Train ARIMA model with automatic parameter selection.
+ 106:         
+ 107:         Implements ARIMA model with auto parameter selection using AIC criterion,
+ 108:         model validation, and diagnostic tests.
+ 109:         
+ 110:         Args:
+ 111:             data (pd.DataFrame): Time series data for training
+ 112:             target_column (str, optional): Target column name. Auto-detects if None.
+ 113:             
+ 114:         Returns:
+ 115:             Dict[str, Any]: Dictionary containing trained model and metadata
+ 116:         """
+ 117:         if not _STATSMODELS_AVAILABLE:
+ 118:             raise ImportError("statsmodels is required for ARIMA modeling. Install with: pip install statsmodels")
+ 119:         
+ 120:         # Auto-detect target column if not specified
+ 121:         if target_column is None:
+ 122:             target_column = self._auto_detect_target_column(data)
+ 123:         
+ 124:         if target_column not in data.columns:
+ 125:             raise ValueError(f"Target column '{target_column}' not found in data")
+ 126:         
+ 127:         self.logger.info(f"Training ARIMA model on column '{target_column}'")
+ 128:         
+ 129:         # Prepare data for ARIMA
+ 130:         ts_data = self._prepare_arima_data(data, target_column)
+ 131:         
+ 132:         # Check stationarity and apply differencing if needed
+ 133:         ts_data, diff_order = self._make_stationary(ts_data)
+ 134:         
+ 135:         # Split data for training and validation
+ 136:         train_size = int(len(ts_data) * (1 - self.test_size))
+ 137:         train_data = ts_data[:train_size]
+ 138:         test_data = ts_data[train_size:]
+ 139:         
+ 140:         # Auto parameter selection
+ 141:         best_params = self._auto_select_arima_params(train_data, diff_order)
+ 142:         
+ 143:         # Train final model
+ 144:         try:
+ 145:             model = ARIMA(train_data, order=best_params['order'])
+ 146:             fitted_model = model.fit()
+ 147:             
+ 148:             # Model diagnostics
+ 149:             diagnostics = self._arima_diagnostics(fitted_model, train_data)
+ 150:             
+ 151:             # Validate on test set
+ 152:             validation_results = self._validate_arima_model(fitted_model, test_data)
+ 153:             
+ 154:             # Store model results
+ 155:             model_info = {
+ 156:                 'model': fitted_model,
+ 157:                 'model_type': 'ARIMA',
+ 158:                 'parameters': best_params,
+ 159:                 'target_column': target_column,
+ 160:                 'differencing_order': diff_order,
+ 161:                 'diagnostics': diagnostics,
+ 162:                 'validation': validation_results,
+ 163:                 'train_size': len(train_data),
+ 164:                 'test_size': len(test_data),
+ 165:                 'aic': fitted_model.aic,
+ 166:                 'bic': fitted_model.bic
+ 167:             }
+ 168:             
+ 169:             self.trained_models['arima'] = model_info
+ 170:             self.logger.info(f"ARIMA model trained successfully with order {best_params['order']}")
+ 171:             
+ 172:             return model_info
+ 173:             
+ 174:         except Exception as e:
+ 175:             self.logger.error(f"Error training ARIMA model: {e}")
+ 176:             raise
+ 177:     
+ 178:     def _prepare_arima_data(self, data: pd.DataFrame, target_column: str) -> pd.Series:
+ 179:         """
+ 180:         Prepare data for ARIMA modeling.
+ 181:         
+ 182:         Args:
+ 183:             data (pd.DataFrame): Input data
+ 184:             target_column (str): Target column name
+ 185:             
+ 186:         Returns:
+ 187:             pd.Series: Prepared time series data
+ 188:         """
+ 189:         # Extract target series
+ 190:         ts_data = data[target_column].copy()
+ 191:         
+ 192:         # Handle missing values
+ 193:         if ts_data.isnull().any():
+ 194:             ts_data = ts_data.interpolate(method='linear')
+ 195:             self.logger.info("Interpolated missing values in time series")
+ 196:         
+ 197:         # Ensure proper frequency if datetime index
+ 198:         if isinstance(data.index, pd.DatetimeIndex):
+ 199:             ts_data.index = data.index
+ 200:             # Infer frequency
+ 201:             ts_data = ts_data.asfreq(ts_data.index.inferred_freq)
+ 202:         
+ 203:         return ts_data
+ 204:     
+ 205:     def _make_stationary(self, ts_data: pd.Series) -> Tuple[pd.Series, int]:
+ 206:         """
+ 207:         Make time series stationary using differencing.
+ 208:         
+ 209:         Args:
+ 210:             ts_data (pd.Series): Time series data
+ 211:             
+ 212:         Returns:
+ 213:             Tuple[pd.Series, int]: Stationary series and differencing order
+ 214:         """
+ 215:         max_d = self.arima_params.get('max_d', 2)
+ 216:         diff_order = 0
+ 217:         current_series = ts_data.copy()
+ 218:         
+ 219:         # Test stationarity
+ 220:         for d in range(max_d + 1):
+ 221:             adf_result = adfuller(current_series.dropna())
+ 222:             p_value = adf_result[1]
+ 223:             
+ 224:             if p_value <= 0.05:  # Series is stationary
+ 225:                 self.logger.info(f"Series is stationary with differencing order: {diff_order}")
+ 226:                 break
+ 227:             
+ 228:             if d < max_d:
+ 229:                 current_series = current_series.diff().dropna()
+ 230:                 diff_order += 1
+ 231:         
+ 232:         return current_series, diff_order
+ 233:     
+ 234:     def _auto_select_arima_params(self, train_data: pd.Series, d: int) -> Dict[str, Any]:
+ 235:         """
+ 236:         Automatically select ARIMA parameters using grid search.
+ 237:         
+ 238:         Args:
+ 239:             train_data (pd.Series): Training data
+ 240:             d (int): Differencing order
+ 241:             
+ 242:         Returns:
+ 243:             Dict[str, Any]: Best parameters found
+ 244:         """
+ 245:         max_p = self.arima_params.get('max_p', 5)
+ 246:         max_q = self.arima_params.get('max_q', 5)
+ 247:         ic = self.arima_params.get('information_criterion', 'aic')
+ 248:         
+ 249:         best_aic = np.inf
+ 250:         best_params = None
+ 251:         
+ 252:         self.logger.info(f"Searching ARIMA parameters: p(0-{max_p}), d({d}), q(0-{max_q})")
+ 253:         
+ 254:         for p in range(max_p + 1):
+ 255:             for q in range(max_q + 1):
+ 256:                 try:
+ 257:                     model = ARIMA(train_data, order=(p, d, q))
+ 258:                     fitted = model.fit()
+ 259:                     
+ 260:                     # Use specified information criterion
+ 261:                     if ic == 'aic':
+ 262:                         score = fitted.aic
+ 263:                     elif ic == 'bic':
+ 264:                         score = fitted.bic
+ 265:                     else:
+ 266:                         score = fitted.aic
+ 267:                     
+ 268:                     if score < best_aic:
+ 269:                         best_aic = score
+ 270:                         best_params = {
+ 271:                             'order': (p, d, q),
+ 272:                             'aic': fitted.aic,
+ 273:                             'bic': fitted.bic
+ 274:                         }
+ 275:                         
+ 276:                 except Exception:
+ 277:                     continue
+ 278:         
+ 279:         if best_params is None:
+ 280:             # Fallback to simple ARIMA(1,d,1)
+ 281:             best_params = {
+ 282:                 'order': (1, d, 1),
+ 283:                 'aic': None,
+ 284:                 'bic': None
+ 285:             }
+ 286:             self.logger.warning("Could not find optimal parameters, using ARIMA(1,d,1)")
+ 287:         else:
+ 288:             self.logger.info(f"Best ARIMA parameters: {best_params['order']} with AIC: {best_params['aic']:.2f}")
+ 289:         
+ 290:         return best_params
+ 291:     
+ 292:     def _arima_diagnostics(self, fitted_model, train_data: pd.Series) -> Dict[str, Any]:
+ 293:         """
+ 294:         Perform ARIMA model diagnostics.
+ 295:         
+ 296:         Args:
+ 297:             fitted_model: Fitted ARIMA model
+ 298:             train_data (pd.Series): Training data
+ 299:             
+ 300:         Returns:
+ 301:             Dict[str, Any]: Diagnostic results
+ 302:         """
+ 303:         diagnostics = {}
+ 304:         
+ 305:         try:
+ 306:             # Residual analysis
+ 307:             residuals = fitted_model.resid
+ 308:             diagnostics['residual_mean'] = residuals.mean()
+ 309:             diagnostics['residual_std'] = residuals.std()
+ 310:             
+ 311:             # Ljung-Box test for residual autocorrelation
+ 312:             lb_test = acorr_ljungbox(residuals, lags=10, return_df=True)
+ 313:             diagnostics['ljung_box_pvalue'] = lb_test['lb_pvalue'].iloc[-1]
+ 314:             diagnostics['residuals_autocorrelated'] = diagnostics['ljung_box_pvalue'] < 0.05
+ 315:             
+ 316:             # Model fit statistics
+ 317:             diagnostics['log_likelihood'] = fitted_model.llf
+ 318:             diagnostics['aic'] = fitted_model.aic
+ 319:             diagnostics['bic'] = fitted_model.bic
+ 320:             
+ 321:             self.logger.info("ARIMA diagnostics completed")
+ 322:             
+ 323:         except Exception as e:
+ 324:             self.logger.warning(f"Error in ARIMA diagnostics: {e}")
+ 325:             diagnostics['error'] = str(e)
+ 326:         
+ 327:         return diagnostics
+ 328:     
+ 329:     def _validate_arima_model(self, fitted_model, test_data: pd.Series) -> Dict[str, Any]:
+ 330:         """
+ 331:         Validate ARIMA model on test data.
+ 332:         
+ 333:         Args:
+ 334:             fitted_model: Fitted ARIMA model
+ 335:             test_data (pd.Series): Test data
+ 336:             
+ 337:         Returns:
+ 338:             Dict[str, Any]: Validation results
+ 339:         """
+ 340:         try:
+ 341:             # Generate predictions
+ 342:             forecast_steps = len(test_data)
+ 343:             forecast = fitted_model.forecast(steps=forecast_steps)
+ 344:             
+ 345:             # Calculate metrics
+ 346:             mae = mean_absolute_error(test_data, forecast)
+ 347:             rmse = np.sqrt(mean_squared_error(test_data, forecast))
+ 348:             mape = np.mean(np.abs((test_data - forecast) / test_data)) * 100
+ 349:             
+ 350:             validation_results = {
+ 351:                 'mae': mae,
+ 352:                 'rmse': rmse,
+ 353:                 'mape': mape,
+ 354:                 'forecast': forecast.tolist(),
+ 355:                 'actual': test_data.tolist()
+ 356:             }
+ 357:             
+ 358:             self.logger.info(f"ARIMA validation - MAE: {mae:.4f}, RMSE: {rmse:.4f}, MAPE: {mape:.2f}%")
+ 359:             
+ 360:             return validation_results
+ 361:             
+ 362:         except Exception as e:
+ 363:             self.logger.error(f"Error in ARIMA validation: {e}")
+ 364:             return {'error': str(e)}
+ 365:     
+ 366:     def _auto_detect_target_column(self, data: pd.DataFrame) -> str:
+ 367:         """
+ 368:         Auto-detect the target column for modeling.
+ 369:         
+ 370:         Args:
+ 371:             data (pd.DataFrame): Input data
+ 372:             
+ 373:         Returns:
+ 374:             str: Target column name
+ 375:         """
+ 376:         # Priority order for target column detection
+ 377:         priority_keywords = [
+ 378:             'inflation_rate', 'inflacion', 'ipc_annual_rate', 'ipc_monthly_rate',
+ 379:             'annual_rate', 'monthly_rate', 'rate', 'ipc'
+ 380:         ]
+ 381:         
+ 382:         for keyword in priority_keywords:
+ 383:             matching_cols = [col for col in data.columns if keyword in col.lower()]
+ 384:             if matching_cols:
+ 385:                 return matching_cols[0]
+ 386:         
+ 387:         # Fallback to first numeric column
+ 388:         numeric_cols = data.select_dtypes(include=[np.number]).columns
+ 389:         if len(numeric_cols) > 0:
+ 390:             return numeric_cols[0]
+ 391:         
+ 392:         raise ValueError("No suitable target column found in data")
+ 393:     
+ 394:     def train_random_forest(self, X: pd.DataFrame, y: pd.Series, 
+ 395:                            hyperparameter_tuning: bool = True) -> Dict[str, Any]:
+ 396:         """
+ 397:         Train Random Forest model with hyperparameter tuning.
+ 398:         
+ 399:         Implements Random Forest regressor with grid search for hyperparameter
+ 400:         optimization and cross-validation for robust evaluation.
+ 401:         
+ 402:         Args:
+ 403:             X (pd.DataFrame): Feature matrix
+ 404:             y (pd.Series): Target variable
+ 405:             hyperparameter_tuning (bool): Whether to perform hyperparameter tuning
+ 406:             
+ 407:         Returns:
+ 408:             Dict[str, Any]: Dictionary containing trained model and metadata
+ 409:         """
+ 410:         if not _SKLEARN_AVAILABLE:
+ 411:             raise ImportError("scikit-learn is required for Random Forest. Install with: pip install scikit-learn")
+ 412:         
+ 413:         self.logger.info("Training Random Forest model")
+ 414:         
+ 415:         # Prepare data
+ 416:         X_clean, y_clean = self._prepare_ml_data(X, y)
+ 417:         
+ 418:         # Split data
+ 419:         train_size = int(len(X_clean) * (1 - self.test_size))
+ 420:         X_train, X_test = X_clean[:train_size], X_clean[train_size:]
+ 421:         y_train, y_test = y_clean[:train_size], y_clean[train_size:]
+ 422:         
+ 423:         # Scale features
+ 424:         scaler = StandardScaler()
+ 425:         X_train_scaled = scaler.fit_transform(X_train)
+ 426:         X_test_scaled = scaler.transform(X_test)
+ 427:         
+ 428:         try:
+ 429:             if hyperparameter_tuning:
+ 430:                 # Hyperparameter tuning with GridSearchCV
+ 431:                 rf_model = self._tune_random_forest_params(X_train_scaled, y_train)
+ 432:             else:
+ 433:                 # Use default parameters from config
+ 434:                 rf_model = RandomForestRegressor(
+ 435:                     n_estimators=self.rf_params.get('n_estimators', 100),
+ 436:                     max_depth=self.rf_params.get('max_depth', 10),
+ 437:                     min_samples_split=self.rf_params.get('min_samples_split', 5),
+ 438:                     min_samples_leaf=self.rf_params.get('min_samples_leaf', 2),
+ 439:                     random_state=self.rf_params.get('random_state', 42)
+ 440:                 )
+ 441:                 rf_model.fit(X_train_scaled, y_train)
+ 442:             
+ 443:             # Validate model
+ 444:             validation_results = self._validate_ml_model(rf_model, X_test_scaled, y_test)
+ 445:             
+ 446:             # Feature importance analysis
+ 447:             feature_importance = self._analyze_feature_importance(rf_model, X_train.columns)
+ 448:             
+ 449:             # Store model results
+ 450:             model_info = {
+ 451:                 'model': rf_model,
+ 452:                 'scaler': scaler,
+ 453:                 'model_type': 'RandomForest',
+ 454:                 'parameters': rf_model.get_params(),
+ 455:                 'feature_names': X_train.columns.tolist(),
+ 456:                 'feature_importance': feature_importance,
+ 457:                 'validation': validation_results,
+ 458:                 'train_size': len(X_train),
+ 459:                 'test_size': len(X_test)
+ 460:             }
+ 461:             
+ 462:             self.trained_models['random_forest'] = model_info
+ 463:             self.logger.info("Random Forest model trained successfully")
+ 464:             
+ 465:             return model_info
+ 466:             
+ 467:         except Exception as e:
+ 468:             self.logger.error(f"Error training Random Forest model: {e}")
+ 469:             raise
+ 470:     
+ 471:     def _prepare_ml_data(self, X: pd.DataFrame, y: pd.Series) -> Tuple[pd.DataFrame, pd.Series]:
+ 472:         """
+ 473:         Prepare data for machine learning models.
+ 474:         
+ 475:         Args:
+ 476:             X (pd.DataFrame): Feature matrix
+ 477:             y (pd.Series): Target variable
+ 478:             
+ 479:         Returns:
+ 480:             Tuple[pd.DataFrame, pd.Series]: Cleaned feature matrix and target
+ 481:         """
+ 482:         # Align indices
+ 483:         common_idx = X.index.intersection(y.index)
+ 484:         X_aligned = X.loc[common_idx]
+ 485:         y_aligned = y.loc[common_idx]
+ 486:         
+ 487:         # Handle missing values
+ 488:         X_clean = X_aligned.fillna(method='ffill').fillna(method='bfill').fillna(0)
+ 489:         y_clean = y_aligned.fillna(method='ffill').fillna(method='bfill')
+ 490:         
+ 491:         # Remove any remaining NaN values
+ 492:         mask = ~(X_clean.isnull().any(axis=1) | y_clean.isnull())
+ 493:         X_clean = X_clean[mask]
+ 494:         y_clean = y_clean[mask]
+ 495:         
+ 496:         self.logger.info(f"Prepared ML data: {len(X_clean)} samples, {len(X_clean.columns)} features")
+ 497:         
+ 498:         return X_clean, y_clean
+ 499:     
+ 500:     def _tune_random_forest_params(self, X_train: np.ndarray, y_train: np.ndarray):
+ 501:         """
+ 502:         Tune Random Forest hyperparameters using GridSearchCV.
+ 503:         
+ 504:         Args:
+ 505:             X_train (np.ndarray): Training features
+ 506:             y_train (np.ndarray): Training target
+ 507:             
+ 508:         Returns:
+ 509:             RandomForestRegressor: Tuned model
+ 510:         """
+ 511:         # Parameter grid for tuning
+ 512:         param_grid = {
+ 513:             'n_estimators': [50, 100, 200],
+ 514:             'max_depth': [5, 10, 15, None],
+ 515:             'min_samples_split': [2, 5, 10],
+ 516:             'min_samples_leaf': [1, 2, 4]
+ 517:         }
+ 518:         
+ 519:         # Use TimeSeriesSplit for cross-validation
+ 520:         cv_folds = self.eval_params.get('cross_validation_folds', 5)
+ 521:         tscv = TimeSeriesSplit(n_splits=cv_folds)
+ 522:         
+ 523:         # Grid search
+ 524:         rf_base = RandomForestRegressor(random_state=self.rf_params.get('random_state', 42))
+ 525:         grid_search = GridSearchCV(
+ 526:             rf_base, param_grid, cv=tscv, scoring='neg_mean_absolute_error',
+ 527:             n_jobs=-1, verbose=0
+ 528:         )
+ 529:         
+ 530:         grid_search.fit(X_train, y_train)
+ 531:         
+ 532:         self.logger.info(f"Best RF parameters: {grid_search.best_params_}")
+ 533:         self.logger.info(f"Best CV score: {-grid_search.best_score_:.4f}")
+ 534:         
+ 535:         return grid_search.best_estimator_
+ 536:     
+ 537:     def _analyze_feature_importance(self, model, feature_names: List[str]) -> Dict[str, float]:
+ 538:         """
+ 539:         Analyze feature importance from trained model.
+ 540:         
+ 541:         Args:
+ 542:             model: Trained model with feature_importances_ attribute
+ 543:             feature_names (List[str]): Names of features
+ 544:             
+ 545:         Returns:
+ 546:             Dict[str, float]: Feature importance scores
+ 547:         """
+ 548:         if hasattr(model, 'feature_importances_'):
+ 549:             importance_dict = dict(zip(feature_names, model.feature_importances_))
+ 550:             # Sort by importance
+ 551:             sorted_importance = dict(sorted(importance_dict.items(), 
+ 552:                                           key=lambda x: x[1], reverse=True))
+ 553:             
+ 554:             self.logger.info(f"Top 5 important features: {list(sorted_importance.keys())[:5]}")
+ 555:             return sorted_importance
+ 556:         else:
+ 557:             return {}
+ 558:     
+ 559:     def train_lstm(self, data: pd.DataFrame, target_column: str = None, 
+ 560:                    sequence_length: int = 12) -> Dict[str, Any]:
+ 561:         """
+ 562:         Train LSTM model with TensorFlow/Keras.
+ 563:         
+ 564:         Implements LSTM neural network for time series prediction with
+ 565:         proper data preparation and early stopping.
+ 566:         
+ 567:         Args:
+ 568:             data (pd.DataFrame): Time series data
+ 569:             target_column (str, optional): Target column name
+ 570:             sequence_length (int): Length of input sequences
+ 571:             
+ 572:         Returns:
+ 573:             Dict[str, Any]: Dictionary containing trained model and metadata
+ 574:         """
+ 575:         if not _TENSORFLOW_AVAILABLE:
+ 576:             raise ImportError("TensorFlow is required for LSTM. Install with: pip install tensorflow")
+ 577:         
+ 578:         # Auto-detect target column if not specified
+ 579:         if target_column is None:
+ 580:             target_column = self._auto_detect_target_column(data)
+ 581:         
+ 582:         self.logger.info(f"Training LSTM model on column '{target_column}'")
+ 583:         
+ 584:         # Prepare LSTM data
+ 585:         X_lstm, y_lstm, scaler = self._prepare_lstm_data(data, target_column, sequence_length)
+ 586:         
+ 587:         # Split data
+ 588:         train_size = int(len(X_lstm) * (1 - self.test_size))
+ 589:         X_train, X_test = X_lstm[:train_size], X_lstm[train_size:]
+ 590:         y_train, y_test = y_lstm[:train_size], y_lstm[train_size:]
+ 591:         
+ 592:         try:
+ 593:             # Build LSTM model
+ 594:             model = self._build_lstm_model(X_train.shape[1:])
+ 595:             
+ 596:             # Train model
+ 597:             history = self._train_lstm_model(model, X_train, y_train, X_test, y_test)
+ 598:             
+ 599:             # Validate model
+ 600:             validation_results = self._validate_lstm_model(model, X_test, y_test, scaler)
+ 601:             
+ 602:             # Store model results
+ 603:             model_info = {
+ 604:                 'model': model,
+ 605:                 'scaler': scaler,
+ 606:                 'model_type': 'LSTM',
+ 607:                 'sequence_length': sequence_length,
+ 608:                 'target_column': target_column,
+ 609:                 'training_history': history.history,
+ 610:                 'validation': validation_results,
+ 611:                 'train_size': len(X_train),
+ 612:                 'test_size': len(X_test)
+ 613:             }
+ 614:             
+ 615:             self.trained_models['lstm'] = model_info
+ 616:             self.logger.info("LSTM model trained successfully")
+ 617:             
+ 618:             return model_info
+ 619:             
+ 620:         except Exception as e:
+ 621:             self.logger.error(f"Error training LSTM model: {e}")
+ 622:             raise
+ 623:     
+ 624:     def _prepare_lstm_data(self, data: pd.DataFrame, target_column: str, 
+ 625:                           sequence_length: int) -> Tuple[np.ndarray, np.ndarray, StandardScaler]:
+ 626:         """
+ 627:         Prepare data for LSTM training.
+ 628:         
+ 629:         Args:
+ 630:             data (pd.DataFrame): Input data
+ 631:             target_column (str): Target column name
+ 632:             sequence_length (int): Length of input sequences
+ 633:             
+ 634:         Returns:
+ 635:             Tuple[np.ndarray, np.ndarray, StandardScaler]: X, y, and scaler
+ 636:         """
+ 637:         # Extract target series
+ 638:         target_series = data[target_column].fillna(method='ffill').fillna(method='bfill')
+ 639:         
+ 640:         # Scale data
+ 641:         scaler = StandardScaler()
+ 642:         scaled_data = scaler.fit_transform(target_series.values.reshape(-1, 1))
+ 643:         
+ 644:         # Create sequences
+ 645:         X, y = [], []
+ 646:         for i in range(sequence_length, len(scaled_data)):
+ 647:             X.append(scaled_data[i-sequence_length:i, 0])
+ 648:             y.append(scaled_data[i, 0])
+ 649:         
+ 650:         X = np.array(X)
+ 651:         y = np.array(y)
+ 652:         
+ 653:         # Reshape X for LSTM (samples, time steps, features)
+ 654:         X = X.reshape((X.shape[0], X.shape[1], 1))
+ 655:         
+ 656:         self.logger.info(f"Prepared LSTM data: {X.shape[0]} sequences of length {sequence_length}")
+ 657:         
+ 658:         return X, y, scaler
+ 659:     
+ 660:     def _build_lstm_model(self, input_shape: Tuple[int, int]) -> Sequential:
+ 661:         """
+ 662:         Build LSTM neural network architecture.
+ 663:         
+ 664:         Args:
+ 665:             input_shape (Tuple[int, int]): Shape of input data
+ 666:             
+ 667:         Returns:
+ 668:             Sequential: Compiled LSTM model
+ 669:         """
+ 670:         model = Sequential()
+ 671:         
+ 672:         # LSTM layers
+ 673:         hidden_units = self.lstm_params.get('hidden_units', 50)
+ 674:         dropout = self.lstm_params.get('dropout', 0.2)
+ 675:         
+ 676:         model.add(LSTM(hidden_units, return_sequences=True, input_shape=input_shape))
+ 677:         model.add(Dropout(dropout))
+ 678:         
+ 679:         model.add(LSTM(hidden_units, return_sequences=False))
+ 680:         model.add(Dropout(dropout))
+ 681:         
+ 682:         # Dense output layer
+ 683:         model.add(Dense(1))
+ 684:         
+ 685:         # Compile model
+ 686:         learning_rate = self.lstm_params.get('learning_rate', 0.001)
+ 687:         optimizer = Adam(learning_rate=learning_rate)
+ 688:         model.compile(optimizer=optimizer, loss='mse', metrics=['mae'])
+ 689:         
+ 690:         self.logger.info(f"Built LSTM model with {hidden_units} hidden units")
+ 691:         
+ 692:         return model
+ 693:     
+ 694:     def _train_lstm_model(self, model: Sequential, X_train: np.ndarray, y_train: np.ndarray,
+ 695:                          X_test: np.ndarray, y_test: np.ndarray):
+ 696:         """
+ 697:         Train LSTM model with early stopping.
+ 698:         
+ 699:         Args:
+ 700:             model (Sequential): LSTM model to train
+ 701:             X_train (np.ndarray): Training features
+ 702:             y_train (np.ndarray): Training target
+ 703:             X_test (np.ndarray): Test features
+ 704:             y_test (np.ndarray): Test target
+ 705:             
+ 706:         Returns:
+ 707:             History: Training history
+ 708:         """
+ 709:         epochs = self.lstm_params.get('epochs', 100)
+ 710:         batch_size = self.lstm_params.get('batch_size', 32)
+ 711:         
+ 712:         # Early stopping callback
+ 713:         early_stopping = EarlyStopping(
+ 714:             monitor='val_loss',
+ 715:             patience=10,
+ 716:             restore_best_weights=True
+ 717:         )
+ 718:         
+ 719:         # Train model
+ 720:         history = model.fit(
+ 721:             X_train, y_train,
+ 722:             epochs=epochs,
+ 723:             batch_size=batch_size,
+ 724:             validation_data=(X_test, y_test),
+ 725:             callbacks=[early_stopping],
+ 726:             verbose=0
+ 727:         )
+ 728:         
+ 729:         self.logger.info(f"LSTM training completed in {len(history.history['loss'])} epochs")
+ 730:         
+ 731:         return history
+ 732:     
+ 733:     def _validate_ml_model(self, model, X_test: np.ndarray, y_test: np.ndarray) -> Dict[str, Any]:
+ 734:         """
+ 735:         Validate machine learning model on test data.
+ 736:         
+ 737:         Args:
+ 738:             model: Trained model
+ 739:             X_test (np.ndarray): Test features
+ 740:             y_test (np.ndarray): Test target
+ 741:             
+ 742:         Returns:
+ 743:             Dict[str, Any]: Validation results
+ 744:         """
+ 745:         try:
+ 746:             # Generate predictions
+ 747:             y_pred = model.predict(X_test)
+ 748:             
+ 749:             # Calculate metrics
+ 750:             mae = mean_absolute_error(y_test, y_pred)
+ 751:             rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+ 752:             mape = np.mean(np.abs((y_test - y_pred) / y_test)) * 100
+ 753:             
+ 754:             validation_results = {
+ 755:                 'mae': mae,
+ 756:                 'rmse': rmse,
+ 757:                 'mape': mape,
+ 758:                 'predictions': y_pred.tolist() if hasattr(y_pred, 'tolist') else y_pred,
+ 759:                 'actual': y_test.tolist() if hasattr(y_test, 'tolist') else y_test
+ 760:             }
+ 761:             
+ 762:             self.logger.info(f"Model validation - MAE: {mae:.4f}, RMSE: {rmse:.4f}, MAPE: {mape:.2f}%")
+ 763:             
+ 764:             return validation_results
+ 765:             
+ 766:         except Exception as e:
+ 767:             self.logger.error(f"Error in model validation: {e}")
+ 768:             return {'error': str(e)}
+ 769:     
+ 770:     def _validate_lstm_model(self, model: Sequential, X_test: np.ndarray, y_test: np.ndarray,
+ 771:                             scaler: StandardScaler) -> Dict[str, Any]:
+ 772:         """
+ 773:         Validate LSTM model on test data.
+ 774:         
+ 775:         Args:
+ 776:             model (Sequential): Trained LSTM model
+ 777:             X_test (np.ndarray): Test features
+ 778:             y_test (np.ndarray): Test target (scaled)
+ 779:             scaler (StandardScaler): Scaler for inverse transformation
+ 780:             
+ 781:         Returns:
+ 782:             Dict[str, Any]: Validation results
+ 783:         """
+ 784:         try:
+ 785:             # Generate predictions
+ 786:             y_pred_scaled = model.predict(X_test)
+ 787:             
+ 788:             # Inverse transform predictions and actual values
+ 789:             y_pred = scaler.inverse_transform(y_pred_scaled.reshape(-1, 1)).flatten()
+ 790:             y_actual = scaler.inverse_transform(y_test.reshape(-1, 1)).flatten()
+ 791:             
+ 792:             # Calculate metrics
+ 793:             mae = mean_absolute_error(y_actual, y_pred)
+ 794:             rmse = np.sqrt(mean_squared_error(y_actual, y_pred))
+ 795:             mape = np.mean(np.abs((y_actual - y_pred) / y_actual)) * 100
+ 796:             
+ 797:             validation_results = {
+ 798:                 'mae': mae,
+ 799:                 'rmse': rmse,
+ 800:                 'mape': mape,
+ 801:                 'predictions': y_pred.tolist(),
+ 802:                 'actual': y_actual.tolist()
+ 803:             }
+ 804:             
+ 805:             self.logger.info(f"LSTM validation - MAE: {mae:.4f}, RMSE: {rmse:.4f}, MAPE: {mape:.2f}%")
+ 806:             
+ 807:             return validation_results
+ 808:             
+ 809:         except Exception as e:
+ 810:             self.logger.error(f"Error in LSTM validation: {e}")
+ 811:             return {'error': str(e)}
+ 812:     
+ 813:     def evaluate_models(self, models: Optional[Dict[str, Any]] = None, 
+ 814:                        metrics: Optional[List[str]] = None) -> Dict[str, Any]:
+ 815:         """
+ 816:         Evaluate models using MAE, RMSE, and MAPE metrics.
+ 817:         
+ 818:         Compares performance of all trained models using specified metrics
+ 819:         and provides comprehensive evaluation results.
+ 820:         
+ 821:         Args:
+ 822:             models (Dict[str, Any], optional): Models to evaluate. Uses trained_models if None.
+ 823:             metrics (List[str], optional): Metrics to calculate. Uses config if None.
+ 824:             
+ 825:         Returns:
+ 826:             Dict[str, Any]: Evaluation results for all models
+ 827:         """
+ 828:         if models is None:
+ 829:             models = self.trained_models
+ 830:         
+ 831:         if metrics is None:
+ 832:             metrics = self.eval_params.get('metrics', ['mae', 'rmse', 'mape'])
+ 833:         
+ 834:         if not models:
+ 835:             self.logger.warning("No models available for evaluation")
+ 836:             return {}
+ 837:         
+ 838:         self.logger.info(f"Evaluating {len(models)} models with metrics: {metrics}")
+ 839:         
+ 840:         evaluation_results = {}
+ 841:         
+ 842:         for model_name, model_info in models.items():
+ 843:             try:
+ 844:                 # Extract validation results
+ 845:                 validation = model_info.get('validation', {})
+ 846:                 
+ 847:                 if 'error' in validation:
+ 848:                     evaluation_results[model_name] = {
+ 849:                         'status': 'error',
+ 850:                         'error': validation['error']
+ 851:                     }
+ 852:                     continue
+ 853:                 
+ 854:                 # Calculate evaluation metrics
+ 855:                 model_metrics = {}
+ 856:                 for metric in metrics:
+ 857:                     if metric.lower() in validation:
+ 858:                         model_metrics[metric.upper()] = validation[metric.lower()]
+ 859:                 
+ 860:                 # Add model-specific information
+ 861:                 model_evaluation = {
+ 862:                     'metrics': model_metrics,
+ 863:                     'model_type': model_info.get('model_type', 'Unknown'),
+ 864:                     'train_size': model_info.get('train_size', 0),
+ 865:                     'test_size': model_info.get('test_size', 0),
+ 866:                     'status': 'success'
+ 867:                 }
+ 868:                 
+ 869:                 # Add model-specific details
+ 870:                 if model_name == 'arima':
+ 871:                     model_evaluation['parameters'] = model_info.get('parameters', {})
+ 872:                     model_evaluation['aic'] = model_info.get('aic')
+ 873:                     model_evaluation['bic'] = model_info.get('bic')
+ 874:                     model_evaluation['diagnostics'] = model_info.get('diagnostics', {})
+ 875:                 
+ 876:                 elif model_name == 'random_forest':
+ 877:                     model_evaluation['feature_importance'] = model_info.get('feature_importance', {})
+ 878:                     model_evaluation['n_features'] = len(model_info.get('feature_names', []))
+ 879:                 
+ 880:                 elif model_name == 'lstm':
+ 881:                     model_evaluation['sequence_length'] = model_info.get('sequence_length')
+ 882:                     history = model_info.get('training_history', {})
+ 883:                     if 'loss' in history:
+ 884:                         model_evaluation['final_train_loss'] = history['loss'][-1]
+ 885:                         model_evaluation['final_val_loss'] = history['val_loss'][-1]
+ 886:                 
+ 887:                 evaluation_results[model_name] = model_evaluation
+ 888:                 
+ 889:                 # Store scores for model selection
+ 890:                 self.model_scores[model_name] = model_metrics
+ 891:                 
+ 892:                 self.logger.info(f"Evaluated {model_name}: {model_metrics}")
+ 893:                 
+ 894:             except Exception as e:
+ 895:                 self.logger.error(f"Error evaluating model {model_name}: {e}")
+ 896:                 evaluation_results[model_name] = {
+ 897:                     'status': 'error',
+ 898:                     'error': str(e)
+ 899:                 }
+ 900:         
+ 901:         # Add cross-validation results if available
+ 902:         evaluation_results = self._add_cross_validation_results(evaluation_results)
+ 903:         
+ 904:         return evaluation_results
+ 905:     
+ 906:     def _add_cross_validation_results(self, evaluation_results: Dict[str, Any]) -> Dict[str, Any]:
+ 907:         """
+ 908:         Add cross-validation results to evaluation.
+ 909:         
+ 910:         Args:
+ 911:             evaluation_results (Dict[str, Any]): Current evaluation results
+ 912:             
+ 913:         Returns:
+ 914:             Dict[str, Any]: Enhanced evaluation results with CV scores
+ 915:         """
+ 916:         # Perform cross-validation for models that support it
+ 917:         cv_folds = self.eval_params.get('cross_validation_folds', 5)
+ 918:         
+ 919:         for model_name, model_info in self.trained_models.items():
+ 920:             if model_name in evaluation_results and evaluation_results[model_name]['status'] == 'success':
+ 921:                 try:
+ 922:                     if model_name == 'random_forest' and _SKLEARN_AVAILABLE:
+ 923:                         cv_scores = self._cross_validate_rf_model(model_info, cv_folds)
+ 924:                         evaluation_results[model_name]['cross_validation'] = cv_scores
+ 925:                         
+ 926:                 except Exception as e:
+ 927:                     self.logger.warning(f"Cross-validation failed for {model_name}: {e}")
+ 928:         
+ 929:         return evaluation_results
+ 930:     
+ 931:     def _cross_validate_rf_model(self, model_info: Dict[str, Any], cv_folds: int) -> Dict[str, Any]:
+ 932:         """
+ 933:         Perform cross-validation for Random Forest model.
+ 934:         
+ 935:         Args:
+ 936:             model_info (Dict[str, Any]): Model information
+ 937:             cv_folds (int): Number of CV folds
+ 938:             
+ 939:         Returns:
+ 940:             Dict[str, Any]: Cross-validation scores
+ 941:         """
+ 942:         from sklearn.model_selection import cross_val_score
+ 943:         
+ 944:         model = model_info['model']
+ 945:         # Note: In a real implementation, we would need access to the original data
+ 946:         # For now, we'll return placeholder CV results
+ 947:         
+ 948:         cv_scores = {
+ 949:             'cv_mae_mean': 0.0,  # Placeholder
+ 950:             'cv_mae_std': 0.0,   # Placeholder
+ 951:             'cv_folds': cv_folds,
+ 952:             'note': 'Cross-validation requires original training data'
+ 953:         }
+ 954:         
+ 955:         return cv_scores
+ 956:     
+ 957:     def select_best_model(self, evaluation_results: Optional[Dict[str, Any]] = None,
+ 958:                          selection_metric: str = 'mae') -> Dict[str, Any]:
+ 959:         """
+ 960:         Select the best model based on validation performance.
+ 961:         
+ 962:         Selects the model with the lowest error on the specified metric,
+ 963:         with additional considerations for model complexity and interpretability.
+ 964:         
+ 965:         Args:
+ 966:             evaluation_results (Dict[str, Any], optional): Evaluation results. 
+ 967:                                                          Computes if None.
+ 968:             selection_metric (str): Metric to use for selection ('mae', 'rmse', 'mape')
+ 969:             
+ 970:         Returns:
+ 971:             Dict[str, Any]: Information about the best model
+ 972:         """
+ 973:         if evaluation_results is None:
+ 974:             evaluation_results = self.evaluate_models()
+ 975:         
+ 976:         if not evaluation_results:
+ 977:             raise ValueError("No evaluation results available for model selection")
+ 978:         
+ 979:         self.logger.info(f"Selecting best model based on {selection_metric.upper()}")
+ 980:         
+ 981:         # Filter successful models
+ 982:         valid_models = {name: results for name, results in evaluation_results.items() 
+ 983:                        if results.get('status') == 'success'}
+ 984:         
+ 985:         if not valid_models:
+ 986:             raise ValueError("No successfully evaluated models available")
+ 987:         
+ 988:         # Find best model based on selection metric
+ 989:         best_model_name = None
+ 990:         best_score = float('inf')
+ 991:         
+ 992:         for model_name, results in valid_models.items():
+ 993:             metrics = results.get('metrics', {})
+ 994:             if selection_metric.upper() in metrics:
+ 995:                 score = metrics[selection_metric.upper()]
+ 996:                 if score < best_score:
+ 997:                     best_score = score
+ 998:                     best_model_name = model_name
+ 999:         
+1000:         if best_model_name is None:
+1001:             raise ValueError(f"No models have {selection_metric.upper()} metric available")
+1002:         
+1003:         # Get best model information
+1004:         best_model_info = {
+1005:             'model_name': best_model_name,
+1006:             'model_type': valid_models[best_model_name]['model_type'],
+1007:             'best_score': best_score,
+1008:             'selection_metric': selection_metric.upper(),
+1009:             'all_metrics': valid_models[best_model_name]['metrics'],
+1010:             'model_details': valid_models[best_model_name],
+1011:             'trained_model': self.trained_models[best_model_name]
+1012:         }
+1013:         
+1014:         # Add model comparison summary
+1015:         model_comparison = {}
+1016:         for model_name, results in valid_models.items():
+1017:             metrics = results.get('metrics', {})
+1018:             model_comparison[model_name] = {
+1019:                 'mae': metrics.get('MAE', 'N/A'),
+1020:                 'rmse': metrics.get('RMSE', 'N/A'),
+1021:                 'mape': metrics.get('MAPE', 'N/A'),
+1022:                 'model_type': results['model_type']
+1023:             }
+1024:         
+1025:         best_model_info['model_comparison'] = model_comparison
+1026:         
+1027:         self.logger.info(f"Best model selected: {best_model_name} ({best_model_info['model_type']}) "
+1028:                         f"with {selection_metric.upper()}: {best_score:.4f}")
+1029:         
+1030:         return best_model_info
+1031:     
+1032:     def save_models(self, models_dir: str = "models/") -> Dict[str, str]:
+1033:         """
+1034:         Save trained models to disk.
+1035:         
+1036:         Args:
+1037:             models_dir (str): Directory to save models
+1038:             
+1039:         Returns:
+1040:             Dict[str, str]: Dictionary mapping model names to file paths
+1041:         """
+1042:         models_dir = Path(models_dir)
+1043:         models_dir.mkdir(parents=True, exist_ok=True)
+1044:         
+1045:         saved_models = {}
+1046:         
+1047:         for model_name, model_info in self.trained_models.items():
+1048:             try:
+1049:                 model_path = models_dir / f"{model_name}_model.pkl"
+1050:                 
+1051:                 # Save model using pickle
+1052:                 with open(model_path, 'wb') as f:
+1053:                     pickle.dump(model_info, f)
+1054:                 
+1055:                 saved_models[model_name] = str(model_path)
+1056:                 self.logger.info(f"Saved {model_name} model to {model_path}")
+1057:                 
+1058:             except Exception as e:
+1059:                 self.logger.error(f"Error saving {model_name} model: {e}")
+1060:         
+1061:         return saved_models
+1062:     
+1063:     def load_models(self, models_dir: str = "models/") -> Dict[str, Any]:
+1064:         """
+1065:         Load trained models from disk.
+1066:         
+1067:         Args:
+1068:             models_dir (str): Directory containing saved models
+1069:             
+1070:         Returns:
+1071:             Dict[str, Any]: Dictionary of loaded models
+1072:         """
+1073:         models_dir = Path(models_dir)
+1074:         loaded_models = {}
+1075:         
+1076:         if not models_dir.exists():
+1077:             self.logger.warning(f"Models directory not found: {models_dir}")
+1078:             return loaded_models
+1079:         
+1080:         # Look for model files
+1081:         model_files = list(models_dir.glob("*_model.pkl"))
+1082:         
+1083:         for model_file in model_files:
+1084:             try:
+1085:                 model_name = model_file.stem.replace('_model', '')
+1086:                 
+1087:                 with open(model_file, 'rb') as f:
+1088:                     model_info = pickle.load(f)
+1089:                 
+1090:                 loaded_models[model_name] = model_info
+1091:                 self.logger.info(f"Loaded {model_name} model from {model_file}")
+1092:                 
+1093:             except Exception as e:
+1094:                 self.logger.error(f"Error loading model from {model_file}: {e}")
+1095:         
+1096:         self.trained_models.update(loaded_models)
+1097:         return loaded_models
+1098:     
+1099:     def get_model_summary(self) -> Dict[str, Any]:
+1100:         """
+1101:         Generate summary of all trained models.
+1102:         
+1103:         Returns:
+1104:             Dict[str, Any]: Summary of models and their performance
+1105:         """
+1106:         if not self.trained_models:
+1107:             return {'message': 'No models trained yet'}
+1108:         
+1109:         summary = {
+1110:             'total_models': len(self.trained_models),
+1111:             'model_types': {},
+1112:             'best_performers': {},
+1113:             'model_details': {}
+1114:         }
+1115:         
+1116:         # Count model types
+1117:         for model_name, model_info in self.trained_models.items():
+1118:             model_type = model_info.get('model_type', 'Unknown')
+1119:             summary['model_types'][model_type] = summary['model_types'].get(model_type, 0) + 1
+1120:         
+1121:         # Find best performers for each metric
+1122:         metrics = ['mae', 'rmse', 'mape']
+1123:         for metric in metrics:
+1124:             best_score = float('inf')
+1125:             best_model = None
+1126:             
+1127:             for model_name, model_info in self.trained_models.items():
+1128:                 validation = model_info.get('validation', {})
+1129:                 if metric in validation and validation[metric] < best_score:
+1130:                     best_score = validation[metric]
+1131:                     best_model = model_name
+1132:             
+1133:             if best_model:
+1134:                 summary['best_performers'][metric.upper()] = {
+1135:                     'model': best_model,
+1136:                     'score': best_score
+1137:                 }
+1138:         
+1139:         # Add detailed information for each model
+1140:         for model_name, model_info in self.trained_models.items():
+1141:             validation = model_info.get('validation', {})
+1142:             summary['model_details'][model_name] = {
+1143:                 'type': model_info.get('model_type'),
+1144:                 'train_size': model_info.get('train_size'),
+1145:                 'test_size': model_info.get('test_size'),
+1146:                 'mae': validation.get('mae'),
+1147:                 'rmse': validation.get('rmse'),
+1148:                 'mape': validation.get('mape')
+1149:             }
+1150:         
+1151:         return summary
+
+----------------------------------------
+FIN DEL ARCHIVO
+================================================================================

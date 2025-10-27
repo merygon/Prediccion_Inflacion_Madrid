@@ -1,0 +1,397 @@
+================================================================================
+DOCUMENTACIÓN DE CÓDIGO: data_cleaner.py
+================================================================================
+Fecha de generación: 25/10/2025 20:13:49
+Número de líneas: 384
+
+CONTENIDO DEL ARCHIVO:
+----------------------------------------
+
+   1: """
+   2: Data cleaning and processing module for inflation prediction system.
+   3: Handles CSV file reading, missing values, outlier detection, and data validation.
+   4: """
+   5: 
+   6: import pandas as pd
+   7: import numpy as np
+   8: from typing import List, Dict, Any
+   9: import logging
+  10: from pathlib import Path
+  11: 
+  12: class DataProcessor:
+  13:     """
+  14:     Handles data cleaning and processing operations for inflation data.
+  15:     
+  16:     This class provides methods for loading raw data, handling missing values,
+  17:     detecting outliers, and preparing data for analysis.
+  18:     """
+  19:     
+  20:     def __init__(self):
+  21:         """Initialize the DataProcessor with logging configuration."""
+  22:         self.logger = logging.getLogger(__name__)
+  23:         
+  24:     def load_raw_data(self, filepath: str) -> pd.DataFrame:
+  25:         """
+  26:         Load raw data from CSV file with proper error handling.
+  27:         
+  28:         Args:
+  29:             filepath (str): Path to the CSV file to load
+  30:             
+  31:         Returns:
+  32:             pd.DataFrame: Loaded data with proper column types
+  33:             
+  34:         Raises:
+  35:             FileNotFoundError: If the specified file doesn't exist
+  36:             pd.errors.EmptyDataError: If the file is empty
+  37:             pd.errors.ParserError: If the file format is invalid
+  38:         """
+  39:         try:
+  40:             # Check if file exists
+  41:             if not Path(filepath).exists():
+  42:                 raise FileNotFoundError(f"Data file not found: {filepath}")
+  43:             
+  44:             # Load CSV with proper settings for Spanish data
+  45:             data = pd.read_csv(
+  46:                 filepath,
+  47:                 encoding='utf-8',
+  48:                 sep=',',
+  49:                 decimal='.',
+  50:                 parse_dates=True,
+  51:                 index_col=False
+  52:             )
+  53:             
+  54:             # Validate that data is not empty
+  55:             if data.empty:
+  56:                 raise pd.errors.EmptyDataError(f"No data found in file: {filepath}")
+  57:             
+  58:             self.logger.info(f"Successfully loaded {len(data)} rows from {filepath}")
+  59:             return data
+  60:             
+  61:         except FileNotFoundError as e:
+  62:             self.logger.error(f"File not found: {e}")
+  63:             raise
+  64:         except pd.errors.EmptyDataError as e:
+  65:             self.logger.error(f"Empty data file: {e}")
+  66:             raise
+  67:         except pd.errors.ParserError as e:
+  68:             self.logger.error(f"Error parsing CSV file: {e}")
+  69:             raise
+  70:         except Exception as e:
+  71:             self.logger.error(f"Unexpected error loading data: {e}")
+  72:             raise
+  73:     
+  74:     def handle_missing_values(self, data: pd.DataFrame) -> pd.DataFrame:
+  75:         """
+  76:         Handle missing values using interpolation techniques.
+  77:         
+  78:         Uses linear interpolation for numeric columns and forward fill
+  79:         for categorical columns. Logs the number of missing values handled.
+  80:         
+  81:         Args:
+  82:             data (pd.DataFrame): Input data with potential missing values
+  83:             
+  84:         Returns:
+  85:             pd.DataFrame: Data with missing values handled
+  86:         """
+  87:         # Create a copy to avoid modifying original data
+  88:         cleaned_data = data.copy()
+  89:         
+  90:         # Log initial missing values
+  91:         initial_missing = cleaned_data.isnull().sum().sum()
+  92:         if initial_missing > 0:
+  93:             self.logger.info(f"Found {initial_missing} missing values to handle")
+  94:         
+  95:         # Handle numeric columns with linear interpolation
+  96:         numeric_columns = cleaned_data.select_dtypes(include=[np.number]).columns
+  97:         for col in numeric_columns:
+  98:             missing_count = cleaned_data[col].isnull().sum()
+  99:             if missing_count > 0:
+ 100:                 # Use linear interpolation for time series data
+ 101:                 cleaned_data[col] = cleaned_data[col].interpolate(
+ 102:                     method='linear',
+ 103:                     limit_direction='both'
+ 104:                 )
+ 105:                 self.logger.info(f"Interpolated {missing_count} missing values in column '{col}'")
+ 106:         
+ 107:         # Handle categorical columns with forward fill
+ 108:         categorical_columns = cleaned_data.select_dtypes(include=['object', 'category']).columns
+ 109:         for col in categorical_columns:
+ 110:             missing_count = cleaned_data[col].isnull().sum()
+ 111:             if missing_count > 0:
+ 112:                 cleaned_data[col] = cleaned_data[col].fillna(method='ffill')
+ 113:                 # If still missing values at the beginning, use backward fill
+ 114:                 cleaned_data[col] = cleaned_data[col].fillna(method='bfill')
+ 115:                 self.logger.info(f"Forward/backward filled {missing_count} missing values in column '{col}'")
+ 116:         
+ 117:         # Final check for any remaining missing values
+ 118:         final_missing = cleaned_data.isnull().sum().sum()
+ 119:         if final_missing > 0:
+ 120:             self.logger.warning(f"Still have {final_missing} missing values after cleaning")
+ 121:         else:
+ 122:             self.logger.info("All missing values successfully handled")
+ 123:         
+ 124:         return cleaned_data
+ 125:     
+ 126:     def detect_outliers(self, data: pd.DataFrame) -> List[int]:
+ 127:         """
+ 128:         Detect outliers using IQR and Z-score methods.
+ 129:         
+ 130:         Combines both IQR (Interquartile Range) and Z-score methods to identify
+ 131:         outliers in numeric columns. Returns indices of rows containing outliers.
+ 132:         
+ 133:         Args:
+ 134:             data (pd.DataFrame): Input data to analyze for outliers
+ 135:             
+ 136:         Returns:
+ 137:             List[int]: List of row indices that contain outliers
+ 138:         """
+ 139:         outlier_indices = set()
+ 140:         numeric_columns = data.select_dtypes(include=[np.number]).columns
+ 141:         
+ 142:         for col in numeric_columns:
+ 143:             # Skip columns with all NaN values
+ 144:             if data[col].isnull().all():
+ 145:                 continue
+ 146:                 
+ 147:             # IQR method
+ 148:             Q1 = data[col].quantile(0.25)
+ 149:             Q3 = data[col].quantile(0.75)
+ 150:             IQR = Q3 - Q1
+ 151:             
+ 152:             # Define outlier bounds (1.5 * IQR is standard)
+ 153:             lower_bound = Q1 - 1.5 * IQR
+ 154:             upper_bound = Q3 + 1.5 * IQR
+ 155:             
+ 156:             # Find IQR outliers
+ 157:             iqr_outliers = data[(data[col] < lower_bound) | (data[col] > upper_bound)].index
+ 158:             outlier_indices.update(iqr_outliers)
+ 159:             
+ 160:             # Z-score method (threshold of 3 is standard)
+ 161:             z_scores = np.abs((data[col] - data[col].mean()) / data[col].std())
+ 162:             z_outliers = data[z_scores > 3].index
+ 163:             outlier_indices.update(z_outliers)
+ 164:             
+ 165:             # Log findings for this column
+ 166:             iqr_count = len(iqr_outliers)
+ 167:             z_count = len(z_outliers)
+ 168:             if iqr_count > 0 or z_count > 0:
+ 169:                 self.logger.info(f"Column '{col}': {iqr_count} IQR outliers, {z_count} Z-score outliers")
+ 170:         
+ 171:         outlier_list = sorted(list(outlier_indices))
+ 172:         self.logger.info(f"Total unique outlier rows detected: {len(outlier_list)}")
+ 173:         
+ 174:         return outlier_list
+ 175:     
+ 176:     def normalize_dates(self, data: pd.DataFrame) -> pd.DataFrame:
+ 177:         """
+ 178:         Normalize dates to consistent datetime formatting.
+ 179:         
+ 180:         Converts date columns to pandas datetime format and ensures
+ 181:         consistent formatting across the dataset.
+ 182:         
+ 183:         Args:
+ 184:             data (pd.DataFrame): Input data with date columns to normalize
+ 185:             
+ 186:         Returns:
+ 187:             pd.DataFrame: Data with normalized datetime columns
+ 188:         """
+ 189:         normalized_data = data.copy()
+ 190:         
+ 191:         # Common date column names to look for
+ 192:         date_columns = ['fecha', 'date', 'periodo', 'period']
+ 193:         
+ 194:         for col in normalized_data.columns:
+ 195:             # Check if column name suggests it's a date column
+ 196:             if any(date_col in col.lower() for date_col in date_columns):
+ 197:                 try:
+ 198:                     # Convert to datetime with flexible parsing
+ 199:                     normalized_data[col] = pd.to_datetime(
+ 200:                         normalized_data[col],
+ 201:                         infer_datetime_format=True,
+ 202:                         errors='coerce'
+ 203:                     )
+ 204:                     
+ 205:                     # Check for any failed conversions
+ 206:                     failed_conversions = normalized_data[col].isnull().sum()
+ 207:                     if failed_conversions > 0:
+ 208:                         self.logger.warning(f"Failed to convert {failed_conversions} dates in column '{col}'")
+ 209:                     else:
+ 210:                         self.logger.info(f"Successfully normalized dates in column '{col}'")
+ 211:                         
+ 212:                 except Exception as e:
+ 213:                     self.logger.error(f"Error normalizing dates in column '{col}': {e}")
+ 214:             
+ 215:             # Also check if column contains date-like strings
+ 216:             elif normalized_data[col].dtype == 'object':
+ 217:                 # Sample a few values to check if they look like dates
+ 218:                 sample_values = normalized_data[col].dropna().head(5)
+ 219:                 if len(sample_values) > 0:
+ 220:                     # Try to parse first few values as dates
+ 221:                     try:
+ 222:                         pd.to_datetime(sample_values.iloc[0])
+ 223:                         # If successful, convert the entire column
+ 224:                         normalized_data[col] = pd.to_datetime(
+ 225:                             normalized_data[col],
+ 226:                             infer_datetime_format=True,
+ 227:                             errors='coerce'
+ 228:                         )
+ 229:                         self.logger.info(f"Auto-detected and normalized dates in column '{col}'")
+ 230:                     except:
+ 231:                         # Not a date column, skip
+ 232:                         pass
+ 233:         
+ 234:         return normalized_data
+ 235:     
+ 236:     def calculate_inflation_rates(self, data: pd.DataFrame) -> pd.DataFrame:
+ 237:         """
+ 238:         Calculate monthly and annual inflation rates.
+ 239:         
+ 240:         Computes inflation rates based on IPC values, adding new columns
+ 241:         for monthly and annual percentage changes.
+ 242:         
+ 243:         Args:
+ 244:             data (pd.DataFrame): Input data with IPC values
+ 245:             
+ 246:         Returns:
+ 247:             pd.DataFrame: Data with added inflation rate columns
+ 248:         """
+ 249:         rates_data = data.copy()
+ 250:         
+ 251:         # Look for IPC-related columns
+ 252:         ipc_columns = [col for col in rates_data.columns if 'ipc' in col.lower()]
+ 253:         
+ 254:         for col in ipc_columns:
+ 255:             if rates_data[col].dtype in ['float64', 'int64']:
+ 256:                 # Calculate monthly inflation rate (month-over-month percentage change)
+ 257:                 monthly_col = f"{col}_monthly_rate"
+ 258:                 rates_data[monthly_col] = rates_data[col].pct_change() * 100
+ 259:                 
+ 260:                 # Calculate annual inflation rate (year-over-year percentage change)
+ 261:                 annual_col = f"{col}_annual_rate"
+ 262:                 rates_data[annual_col] = rates_data[col].pct_change(periods=12) * 100
+ 263:                 
+ 264:                 self.logger.info(f"Calculated inflation rates for column '{col}'")
+ 265:         
+ 266:         # If no IPC columns found, look for any numeric column that might represent price index
+ 267:         if not ipc_columns:
+ 268:             numeric_columns = rates_data.select_dtypes(include=[np.number]).columns
+ 269:             for col in numeric_columns:
+ 270:                 if any(keyword in col.lower() for keyword in ['index', 'indice', 'precio', 'price']):
+ 271:                     monthly_col = f"{col}_monthly_rate"
+ 272:                     annual_col = f"{col}_annual_rate"
+ 273:                     
+ 274:                     rates_data[monthly_col] = rates_data[col].pct_change() * 100
+ 275:                     rates_data[annual_col] = rates_data[col].pct_change(periods=12) * 100
+ 276:                     
+ 277:                     self.logger.info(f"Calculated inflation rates for price index column '{col}'")
+ 278:         
+ 279:         return rates_data
+ 280:     
+ 281:     def generate_statistics(self, data: pd.DataFrame) -> Dict[str, Any]:
+ 282:         """
+ 283:         Generate descriptive statistics for the dataset.
+ 284:         
+ 285:         Creates comprehensive statistical summary including basic statistics,
+ 286:         missing value counts, and data quality metrics.
+ 287:         
+ 288:         Args:
+ 289:             data (pd.DataFrame): Input data to analyze
+ 290:             
+ 291:         Returns:
+ 292:             Dict[str, Any]: Dictionary containing statistical summaries
+ 293:         """
+ 294:         stats = {}
+ 295:         
+ 296:         # Basic dataset information
+ 297:         stats['dataset_info'] = {
+ 298:             'total_rows': len(data),
+ 299:             'total_columns': len(data.columns),
+ 300:             'memory_usage_mb': data.memory_usage(deep=True).sum() / 1024 / 1024,
+ 301:             'date_range': self._get_date_range(data)
+ 302:         }
+ 303:         
+ 304:         # Missing values analysis
+ 305:         missing_values = data.isnull().sum()
+ 306:         stats['missing_values'] = {
+ 307:             'total_missing': missing_values.sum(),
+ 308:             'missing_percentage': (missing_values.sum() / (len(data) * len(data.columns))) * 100,
+ 309:             'columns_with_missing': missing_values[missing_values > 0].to_dict()
+ 310:         }
+ 311:         
+ 312:         # Numeric columns statistics
+ 313:         numeric_data = data.select_dtypes(include=[np.number])
+ 314:         if not numeric_data.empty:
+ 315:             stats['numeric_statistics'] = {
+ 316:                 'summary': numeric_data.describe().to_dict(),
+ 317:                 'correlation_matrix': numeric_data.corr().to_dict() if len(numeric_data.columns) > 1 else {},
+ 318:                 'skewness': numeric_data.skew().to_dict(),
+ 319:                 'kurtosis': numeric_data.kurtosis().to_dict()
+ 320:             }
+ 321:         
+ 322:         # Categorical columns statistics
+ 323:         categorical_data = data.select_dtypes(include=['object', 'category'])
+ 324:         if not categorical_data.empty:
+ 325:             stats['categorical_statistics'] = {}
+ 326:             for col in categorical_data.columns:
+ 327:                 stats['categorical_statistics'][col] = {
+ 328:                     'unique_values': categorical_data[col].nunique(),
+ 329:                     'most_frequent': categorical_data[col].mode().iloc[0] if not categorical_data[col].mode().empty else None,
+ 330:                     'value_counts': categorical_data[col].value_counts().head(10).to_dict()
+ 331:                 }
+ 332:         
+ 333:         # Data quality metrics
+ 334:         stats['data_quality'] = {
+ 335:             'duplicate_rows': data.duplicated().sum(),
+ 336:             'duplicate_percentage': (data.duplicated().sum() / len(data)) * 100,
+ 337:             'completeness_score': ((data.size - data.isnull().sum().sum()) / data.size) * 100
+ 338:         }
+ 339:         
+ 340:         # Inflation-specific statistics (if applicable)
+ 341:         inflation_columns = [col for col in data.columns if 'rate' in col.lower() or 'inflacion' in col.lower()]
+ 342:         if inflation_columns:
+ 343:             stats['inflation_statistics'] = {}
+ 344:             for col in inflation_columns:
+ 345:                 if data[col].dtype in ['float64', 'int64']:
+ 346:                     stats['inflation_statistics'][col] = {
+ 347:                         'mean_rate': data[col].mean(),
+ 348:                         'median_rate': data[col].median(),
+ 349:                         'std_rate': data[col].std(),
+ 350:                         'min_rate': data[col].min(),
+ 351:                         'max_rate': data[col].max(),
+ 352:                         'periods_above_2_percent': (data[col] > 2.0).sum(),
+ 353:                         'periods_deflation': (data[col] < 0.0).sum()
+ 354:                     }
+ 355:         
+ 356:         self.logger.info("Generated comprehensive dataset statistics")
+ 357:         return stats
+ 358:     
+ 359:     def _get_date_range(self, data: pd.DataFrame) -> Dict[str, str]:
+ 360:         """
+ 361:         Helper method to extract date range from dataset.
+ 362:         
+ 363:         Args:
+ 364:             data (pd.DataFrame): Input data to analyze
+ 365:             
+ 366:         Returns:
+ 367:             Dict[str, str]: Dictionary with start and end dates
+ 368:         """
+ 369:         date_columns = data.select_dtypes(include=['datetime64']).columns
+ 370:         
+ 371:         if len(date_columns) > 0:
+ 372:             # Use the first date column found
+ 373:             date_col = date_columns[0]
+ 374:             return {
+ 375:                 'start_date': str(data[date_col].min()),
+ 376:                 'end_date': str(data[date_col].max()),
+ 377:                 'date_column': date_col
+ 378:             }
+ 379:         else:
+ 380:             return {
+ 381:                 'start_date': 'No date column found',
+ 382:                 'end_date': 'No date column found',
+ 383:                 'date_column': None
+ 384:             }
+
+----------------------------------------
+FIN DEL ARCHIVO
+================================================================================
