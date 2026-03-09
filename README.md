@@ -1,130 +1,82 @@
-# Sistema de Predicción de Inflación en España
+# 📈 Spain Inflation Prediction System
 
-Sistema de inteligencia artificial para predecir la evolución de la tasa de inflación en España utilizando datos históricos del Instituto Nacional de Estadística (INE). El sistema implementa múltiples modelos de machine learning (ARIMA, Random Forest, LSTM) para generar predicciones de inflación a 12 meses y produce informes técnicos completos con análisis económico.
+An end-to-end **ML pipeline** that downloads official INE data, trains multiple forecasting models, and generates 12-month inflation predictions with confidence intervals and a full PDF report — fully automated and reproducible.
 
-## 🚀 Características Principales
+---
 
-- **Descarga Automática de Datos**: Extracción automatizada de series temporales del INE (IPC General, IPC por grupos, IPCA)
-- **Procesamiento Inteligente**: Limpieza de datos, detección de outliers, y normalización automática
-- **Modelos Múltiples**: Implementación de ARIMA, Random Forest y LSTM con selección automática del mejor modelo
-- **Predicciones Robustas**: Generación de predicciones a 12 meses con intervalos de confianza
-- **Informes Completos**: Generación automática de informes técnicos en PDF con visualizaciones y análisis económico
-- **Monitoreo de Rendimiento**: Seguimiento en tiempo real del uso de recursos y optimización de memoria
+## 🎯 What It Does
 
-## 📋 Requisitos del Sistema
+1. **Fetches** CPI time series directly from the INE (Instituto Nacional de Estadística) API
+2. **Cleans & engineers features** — outlier detection, lag features, moving averages, seasonality decomposition
+3. **Trains 3 models** — ARIMA (baseline), Random Forest, LSTM — and auto-selects the best performer
+4. **Generates forecasts** for the next 12 months with confidence intervals
+5. **Produces a full PDF report** with charts and economic analysis
 
-### Requisitos Mínimos
+---
 
-- Python 3.8 o superior
-- 4 GB de RAM disponible
-- 2 GB de espacio en disco
-- Conexión a internet para descarga de datos del INE
+## 📊 Sample Output
 
-### Requisitos Recomendados
-
-- Python 3.9+
-- 8 GB de RAM
-- 4 núcleos de CPU
-- SSD para mejor rendimiento
-
-## 🛠️ Instalación
-
-### 1. Clonar el Repositorio
-
-```bash
-git clone <repository-url>
-cd prediccion-inflacion-espana
+```
+predictions.csv
+fecha,predicted_inflation,confidence_lower,confidence_upper,model_used
+2025-01-01,2.45,1.89,3.01,LSTM
+2025-02-01,2.52,1.95,3.09,LSTM
+...
 ```
 
-### 2. Crear Entorno Virtual
+Plus auto-generated visualizations: historical trends, model comparison, confidence interval bands, seasonal decomposition.
+
+---
+
+## 🛠️ Tech Stack
+
+| Component | Technology |
+|---|---|
+| Language | Python 3.10–3.12 |
+| Time Series | statsmodels (ARIMA) |
+| ML | scikit-learn (Random Forest) |
+| Deep Learning | TensorFlow/Keras (LSTM) — optional |
+| Data Source | INE WSTempus API |
+| Reporting | PDF generation + matplotlib |
+| Config | YAML |
+
+---
+
+## ⚙️ Installation
 
 ```bash
-# Windows
+git clone https://github.com/merygon/Prediccion_Inflacion_Madrid.git
+cd Prediccion_Inflacion_Madrid
+
 python -m venv venv
-venv\Scripts\activate
+source venv/bin/activate  # Windows: venv\Scripts\activate
 
-# Linux/macOS
-python3 -m venv venv
-source venv/bin/activate
-```
-
-### 3. Instalar Dependencias
-
-```bash
 pip install -r requirements.txt
 ```
 
-### 4. Verificar Instalación
+---
 
-```bash
-python src/main.py --help
-```
-
-## 🚀 Uso Rápido
-
-### Ejecución Completa del Pipeline
+## 🚀 Run
 
 ```bash
 python src/main.py
 ```
 
-Este comando ejecutará todo el pipeline de predicción:
+Pipeline sequence: `download → clean → feature engineering → train → forecast → PDF report`
 
-1. Descarga de datos del INE
-2. Procesamiento y limpieza de datos
-3. Ingeniería de características
-4. Entrenamiento de modelos
-5. Generación de predicciones
-6. Creación de informes
+Logs saved to `logs/inflation_prediction.log`
 
-### Ejecución por Módulos
+---
 
-#### Descargar Solo Datos
+## ⚙️ Configuration
 
-```python
-from src.ine_extractor import INEExtractor
-
-extractor = INEExtractor()
-extractor.export_all_data("2020-01-01", "2024-12-31")
-```
-
-#### Procesar Datos Existentes
-
-```python
-from src.data_cleaner import DataProcessor
-
-processor = DataProcessor()
-data = processor.load_raw_data("data/raw/ipc_general.csv")
-cleaned_data = processor.handle_missing_values(data)
-```
-
-#### Generar Solo Predicciones
-
-```python
-from src.predictor import Predictor
-
-predictor = Predictor()
-predictions = predictor.generate_predictions(12)  # 12 meses
-```
-
-## ⚙️ Configuración
-
-El sistema utiliza el archivo `config/config.yaml` para toda la configuración. Las secciones principales son:
-
-### Configuración de Datos
+Edit `config/config.yaml` to adjust dates, models, and INE series IDs:
 
 ```yaml
 data:
   start_date: "2002-01-01"
   end_date: "2024-12-31"
-  retry:
-    max_attempts: 3
-    timeout: 30
-```
 
-### Configuración de Modelos
-
-```yaml
 models:
   arima:
     max_p: 5
@@ -132,123 +84,73 @@ models:
     max_q: 5
   random_forest:
     n_estimators: 100
-    max_depth: 10
   lstm:
     epochs: 100
     batch_size: 32
-```
 
-### Configuración de Predicciones
-
-```yaml
 prediction:
   horizon_months: 12
   confidence_level: 0.95
 ```
 
-### Personalización de Rutas
+To find INE series IDs: search "IPC General" on [WSTempus](https://servicios.ine.es/wstempus), open the series and use the numeric ID at the end of the URL.
 
-```yaml
-paths:
-  data:
-    raw: "data/raw/"
-    processed: "data/processed/"
-  models: "models/"
-  reports: "reports/"
+---
+
+## 🧩 Pipeline Architecture
+
+```
+src/
+├── main.py                 # Pipeline orchestrator
+├── ine_extractor.py        # INE API downloader
+├── data_cleaner.py         # Cleaning, outlier detection, normalization
+├── feature_engineering.py  # Lag features, moving averages, seasonality
+├── model_trainer.py        # ARIMA + RF + LSTM training + model selection
+├── predictor.py            # Forecasting + confidence intervals
+└── report_generator.py     # Charts + PDF report generation
 ```
 
-## 📊 Estructura de Salidas
+---
 
-El sistema genera los siguientes archivos de salida:
+## 🧪 Tests
+
+```bash
+python -m pytest tests/ -v
+```
+
+---
+
+## 📤 Outputs
 
 ```
 reports/
-├── predictions.csv                    # Predicciones en formato CSV
-├── predictions.json                   # Predicciones en formato JSON
-├── technical_report.pdf               # Informe técnico completo
-├── economic_analysis.json             # Análisis económico detallado
-├── pipeline_execution_state.json     # Estado de ejecución del pipeline
+├── predictions.csv / predictions.json
+├── technical_report.pdf
 └── visualizations/
     ├── inflation_trends.png
     ├── model_comparison.png
-    └── predictions_chart.png
+    ├── confidence_intervals.png
+    └── seasonal_decomposition.png
+models/
+├── arima_model.pkl
+├── random_forest.pkl
+└── lstm_model.pkl         # if enabled
 ```
 
-### Formato de Predicciones
+---
 
-#### CSV Format
+## 📜 Data Source
 
-```csv
-fecha,predicted_inflation,confidence_lower,confidence_upper,model_used
-2024-01-01,2.45,1.89,3.01,LSTM
-2024-02-01,2.52,1.95,3.09,LSTM
-```
+Official data from [Instituto Nacional de Estadística (INE)](https://www.ine.es/) via WSTempus API. Usage governed by INE's terms of service.
 
-#### JSON Format
+---
 
-```json
-{
-  "predictions": [
-    {
-      "fecha": "2024-01-01",
-      "predicted_inflation": 2.45,
-      "confidence_lower": 1.89,
-      "confidence_upper": 3.01,
-      "model_used": "LSTM"
-    }
-  ],
-  "metadata": {
-    "generation_date": "2024-01-15T10:30:00",
-    "horizon_months": 12,
-    "confidence_level": 0.95
-  }
-}
-```
+## 📚 Context
 
-## 🧪 Ejecución de Tests
+Built as a final project for the **AI & Data Science** curriculum — Universidad Pontificia Comillas (ICAI), 2025.
 
-### Tests Unitarios
+---
 
-```bash
-python -m pytest tests/test_data_processor.py -v
-python -m pytest tests/test_feature_engineering.py -v
-python -m pytest tests/test_ine_extractor.py -v
-```
+## 👩‍💻 Author
 
-### Tests de Integración
-
-```bash
-python -m pytest tests/test_integration_pipeline.py -v
-```
-
-### Ejecutar Todos los Tests
-
-```bash
-python tests/run_all_tests.py
-```
-
-## 📈 Monitoreo y Logs
-
-### Logs del Sistema
-
-Los logs se guardan en `logs/inflation_prediction.log` con información detallada sobre:
-
-- Progreso de cada etapa del pipeline
-- Uso de recursos del sistema
-- Errores y advertencias
-- Métricas de rendimiento
-
-### Monitoreo en Tiempo Real
-
-```python
-from src.main import InflationPredictionPipeline
-
-pipeline = InflationPredictionPipeline()
-status = pipeline.get_pipeline_status()
-print(f"Estado: {status['status']}")
-print(f"Progreso: {status['completed_steps']}/{status['total_steps']}")
-```
-
-## 📄 Licencia
-
-Este proyecto está bajo la Licencia MIT. Ver el archivo `LICENSE` para más detalles.
+María González Gómez · [GitHub](https://github.com/merygon)
